@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src https://intervals.icu 'self'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#0f1220">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="MyCoach">
+<title>MyCoach</title>
+<style>
+/* Layout: mobiel eerst. Meldingen, dan de kaart Vandaag, drie grote cijfers en de week als dagkaarten; de rest in tabs.
+   Palet "Nacht" (spec dashboard-runna): donker is de hoofdversie, licht volgt de systeeminstelling.
+   --t-*: vaste kleur per soort training. --ok/--warn/--bad: betekenis, los van de soorten. */
+:root {
+  --bg: #0f1220; --panel: #1a1e30; --panel2: #242a42; --ink: #f2f3fa; --muted: #9aa0bd; --line: #2c3250;
+  --accent: #6ea8ff; --accent-soft: #1d2a4a; --tweede: #ff4f7b;
+  --t-rustig: #3ddc97; --t-hard: #ff4f7b; --t-mtb: #ff9f43; --t-rollen: #a78bfa; --t-kracht: #ffd54a; --t-rust: #6b7190;
+  --ok: #3ddc97; --warn: #ffb547; --bad: #ff5d5d;
+  --ok-soft: #15332a; --warn-soft: #3a2d14; --bad-soft: #3d1c24;
+  --display: "Avenir Next Condensed", "DIN Condensed", "Arial Narrow", "Roboto Condensed", system-ui, sans-serif;
+  --body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f3f4fa; --panel: #ffffff; --panel2: #e8eaf4; --ink: #141830; --muted: #5d6386; --line: #dfe2ef;
+    --accent: #2f62d9; --accent-soft: #e4ebfb; --tweede: #e5265a;
+    --t-rustig: #14a86b; --t-hard: #e5265a; --t-mtb: #e57a12; --t-rollen: #7c5ce6; --t-kracht: #c99800; --t-rust: #8a8fab;
+    --ok: #12804f; --warn: #a35f00; --bad: #c62828;
+    --ok-soft: #dcf5e7; --warn-soft: #fdf0d9; --bad-soft: #fde3e3; color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #f3f4fa; --panel: #ffffff; --panel2: #e8eaf4; --ink: #141830; --muted: #5d6386; --line: #dfe2ef;
+  --accent: #2f62d9; --accent-soft: #e4ebfb; --tweede: #e5265a;
+  --t-rustig: #14a86b; --t-hard: #e5265a; --t-mtb: #e57a12; --t-rollen: #7c5ce6; --t-kracht: #c99800; --t-rust: #8a8fab;
+  --ok: #12804f; --warn: #a35f00; --bad: #c62828;
+  --ok-soft: #dcf5e7; --warn-soft: #fdf0d9; --bad-soft: #fde3e3; color-scheme: light;
+}
+body { background: var(--bg); color: var(--ink); font: 16px/1.5 var(--body); -webkit-text-size-adjust: 100%; }
+.pagina { max-width: 760px; margin: 0 auto; padding-block: 16px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; }
+h1, h2, h3 { font-family: var(--display); font-weight: 800; text-wrap: balance; margin: 0; letter-spacing: .02em; }
+h1 { font-size: 2rem; line-height: 1; text-transform: uppercase; letter-spacing: .04em; }
+h2 { font-size: .85rem; text-transform: uppercase; letter-spacing: .14em; color: var(--muted); font-weight: 700; }
+h3 { font-size: 1.1rem; }
+p { margin: 0; }
+.label { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.kop { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 8px 12px; }
+.stand { font-family: var(--display); font-size: .85rem; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; padding: 4px 12px; border-radius: 999px; }
+.stand[data-stand="op schema"] { background: var(--ok-soft); color: var(--ok); }
+.stand[data-stand="achter"] { background: var(--warn-soft); color: var(--warn); }
+.stand[data-stand="pas op"] { background: var(--bad-soft); color: var(--bad); }
+section { display: grid; gap: 12px; min-width: 0; }
+[hidden] { display: none !important; }
+.waarschuwing { border-left: 4px solid var(--bad); background: var(--panel); padding: 12px 14px; display: grid; gap: 6px; border-radius: 4px 14px 14px 4px; }
+.waarschuwing.voorstel { border-left-color: var(--accent); }
+details.waarschuwing { padding: 0 14px; gap: 0; border-left-color: var(--warn); }
+details.waarschuwing.voorstel { border-left-color: var(--accent); }
+details.waarschuwing > summary { color: var(--ink); font-weight: 600; gap: 10px; list-style: none; }
+details.waarschuwing > summary::-webkit-details-marker { display: none; }
+details.waarschuwing > summary::after { content: "meer"; margin-left: auto; font-size: .8rem; font-weight: 400; color: var(--accent); }
+details.waarschuwing[open] > summary::after { content: "minder"; }
+details.waarschuwing > p { margin: 0 0 6px; }
+details.waarschuwing > p:last-child { margin-bottom: 12px; }
+.advies { color: var(--muted); }
+.dagen { display: grid; gap: 8px; }
+/* Dagkaart: datum | icoon, naam en mini-grafiek | duur, met een kleurstreep in de kleur van de soort */
+.dag { background: var(--panel); border-radius: 14px; border-left: 5px solid var(--kleur, var(--t-rust)); display: grid; gap: 10px; min-width: 0; padding: 0 14px 0 0; }
+.dag[open] { padding-bottom: 12px; }
+.dag.vandaag { box-shadow: inset 0 0 0 2px var(--kleur, var(--accent)); }
+.dag.voorbij { opacity: .55; }
+.meldingen { display: grid; gap: 8px; }
+.dag-rij { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; gap: 12px; align-items: center; min-height: 56px; padding: 8px 0; color: var(--ink); list-style: none; }
+details.dag > summary::-webkit-details-marker { display: none; }
+details.dag > .training { padding-left: 14px; }
+.dag-datum { text-align: center; font-family: var(--display); line-height: 1; }
+.dag-datum span { display: block; font-size: .65rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+.dag-datum b { display: block; font-size: 1.3rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.dag-naam { display: grid; gap: 5px; min-width: 0; font-weight: 600; font-size: .95rem; }
+.dag-naam .regel { display: flex; gap: 6px; align-items: center; min-width: 0; }
+.dag-naam .regel > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dag-naam .icoon { color: var(--kleur); }
+.dag-duur { font: 800 1.15rem/1 var(--display); font-variant-numeric: tabular-nums; text-align: right; }
+.dag-duur small { display: block; font: 600 .7rem var(--body); color: var(--ok); margin-top: 3px; }
+.dag-kop { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.icoon { width: 18px; height: 18px; flex: none; }
+/* Blokjesgrafiek: breedte = duur, hoogte = intensiteit, stippellijn = grens van zone 2 */
+.blokjes { display: flex; align-items: flex-end; gap: 2px; height: 64px; position: relative; }
+.blokjes.mini { height: 16px; }
+.blokjes i { display: block; border-radius: 4px 4px 2px 2px; min-width: 3px; background: var(--kleur); }
+.blokjes i.hard { background: var(--t-hard); }
+.blokjes .z2 { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--muted); }
+/* Kaart Vandaag */
+.vandaagkaart { background: var(--panel); border-radius: 22px; padding: 18px; display: grid; gap: 14px; position: relative; overflow: hidden; min-width: 0; }
+.vandaagkaart::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 4px; background: var(--kleur); }
+.vandaagkaart .boven { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px 10px; }
+.vandaagkaart h3 { font-size: 1.6rem; line-height: 1.05; text-transform: uppercase; }
+.vandaagkaart .duur { font: 800 3.4rem/.9 var(--display); color: var(--kleur); font-variant-numeric: tabular-nums; }
+.vandaagkaart .duur small { font-size: 1.2rem; color: var(--muted); }
+.vandaagkaart + .vandaagkaart { margin-top: -6px; }
+.soort { display: inline-flex; align-items: center; gap: 6px; font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; border-radius: 999px; padding: 4px 10px;
+  background: color-mix(in srgb, var(--kleur) 18%, transparent); color: var(--kleur); }
+.soort.gedaan { --kleur: var(--ok); }
+.stappen { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: .92rem; }
+.stappen li { display: grid; grid-template-columns: 44px 1fr; gap: 10px; }
+.stappen b { font-family: var(--display); font-weight: 800; font-variant-numeric: tabular-nums; }
+/* Drie grote cijfers */
+.groot { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.groot > div { background: var(--panel); border-radius: 16px; padding: 14px 12px; min-width: 0; }
+.groot b { display: block; font: 800 2rem/1 var(--display); font-variant-numeric: tabular-nums; }
+.groot b small { font-size: 1rem; color: var(--muted); font-weight: 700; }
+.groot .label { display: block; margin-top: 6px; font-size: .68rem; letter-spacing: .12em; }
+.groot .duiding { display: block; font-size: .75rem; font-weight: 700; margin-top: 2px; }
+.training { display: grid; gap: 4px; padding-top: 6px; border-top: 1px solid var(--line); }
+.training:first-of-type { border-top: 0; padding-top: 0; }
+.chip { font-size: .8rem; padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
+.chip.hard { background: var(--warn-soft); color: var(--warn); }
+.rust { color: var(--muted); }
+.oefeningen { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.oefeningen li { font-size: .92rem; }
+details summary { cursor: pointer; color: var(--accent); min-height: 44px; display: flex; align-items: center; }
+details p { margin-top: 4px; }
+.tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; background: var(--panel); border: 0; border-radius: 14px; padding: 4px;
+  position: sticky; top: 0; z-index: 2; }
+.tabs button { background: transparent; color: var(--muted); min-height: 44px; padding: 6px 4px; font-size: .95rem; }
+.tabs button[aria-selected="true"] { background: var(--ink); color: var(--bg); }
+.tabs button { font-family: var(--display); font-weight: 800; text-transform: uppercase; letter-spacing: .08em; border-radius: 10px; }
+.paneel { display: grid; gap: 14px; min-width: 0; }
+.grafiek { background: var(--panel); border: 0; border-radius: 16px; padding: 12px 8px; position: relative; min-width: 0; touch-action: pan-y; }
+.grafiek svg { display: block; width: 100%; max-width: 100%; height: auto; overflow: visible; }
+.grafiek text { fill: var(--muted); font: 11px var(--body); font-variant-numeric: tabular-nums; }
+.legenda { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: .85rem; color: var(--muted); }
+.legenda i { display: inline-block; width: 12px; height: 3px; vertical-align: middle; margin-right: 6px; }
+.tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--bg); font-size: .8rem; padding: 4px 8px; border-radius: 4px; max-width: calc(100% - 8px); white-space: normal; z-index: 1; }
+/* Gsm: 2 × 2 compacte rijen, label links en getal rechts. Breder: één rij van vier. */
+.cijfers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.cijfer { background: var(--panel); border: 0; border-radius: 12px; padding: 6px 10px; min-width: 0;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 0 8px; }
+.cijfer .label { font-size: .7rem; letter-spacing: .03em; }
+.cijfer b { font: 600 1.15rem/1.2 var(--display); font-variant-numeric: tabular-nums; text-align: right; }
+.cijfer .duiding { grid-column: 1 / -1; font-size: .75rem; color: var(--muted); }
+.cijfer:last-child:nth-child(odd) { grid-column: 1 / -1; }
+@media (min-width: 560px) { .cijfers { grid-template-columns: none; grid-auto-columns: minmax(0, 1fr); grid-auto-flow: column; } .cijfer:last-child:nth-child(odd) { grid-column: auto; } .cijfer { grid-template-columns: minmax(0, 1fr); } .cijfer b { text-align: left; } }
+.uitleg { background: var(--panel); border: 0; border-radius: 14px; padding: 10px 14px; }
+.uitleg p + p { margin-top: 6px; }
+.schaal { display: grid; gap: 4px; margin-top: 8px; font-size: .92rem; }
+.schaal div { display: grid; grid-template-columns: 2em 1fr; gap: 8px; }
+.schaal b { font-family: var(--display); font-size: 1.1rem; }
+.tijdlijn { list-style: none; margin: 0; padding: 0 0 0 22px; position: relative; display: grid; gap: 10px; }
+.tijdlijn::before { content: ""; position: absolute; left: 7px; top: 6px; bottom: 6px; width: 2px; background: var(--line); }
+.tijdlijn li { position: relative; display: grid; gap: 2px; }
+.tijdlijn li::before { content: ""; position: absolute; left: -20px; top: 6px; width: 12px; height: 12px; border-radius: 50%; background: var(--panel); border: 2px solid var(--muted); }
+.tijdlijn .fase { background: var(--panel); border: 1px solid var(--panel); border-radius: 14px; padding: 10px 12px; }
+.tijdlijn .fase::before { top: 14px; }
+.tijdlijn .fase.huidig { border-color: var(--accent); }
+.tijdlijn .fase.huidig::before { background: var(--accent); border-color: var(--accent); }
+.tijdlijn .fase.voorbij { opacity: .6; }
+.tijdlijn .fase details > summary { color: var(--ink); min-height: 0; display: grid; gap: 0; list-style: none; }
+.tijdlijn .fase details > summary::-webkit-details-marker { display: none; }
+.tijdlijn .fase details[open] > summary { margin-bottom: 4px; }
+.tijdlijn .wedstrijd::before { border-radius: 2px; transform: rotate(45deg); border-color: var(--tweede); background: var(--tweede); }
+.tijdlijn .wedstrijd.A::before { border-color: var(--bad); background: var(--bad); }
+.tijdlijn .checkpoint::before { border-color: var(--accent); }
+.tijdlijn .checkpoint.klaar::before { background: var(--ok); border-color: var(--ok); }
+.tijdlijn .nu { color: var(--bad); font-weight: 600; font-size: .9rem; }
+.tijdlijn .nu::before { border-color: var(--bad); background: var(--bad); width: 10px; height: 10px; left: -19px; top: 7px; }
+.fase-kop { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 10px; align-items: baseline; }
+.leeg { background: var(--panel); border: 1px dashed var(--line); border-radius: 8px; padding: 16px; color: var(--muted); }
+button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button { font: 600 1rem var(--body); background: var(--accent); color: var(--panel); border: 0; border-radius: 8px; padding: 8px 16px; min-height: 44px; cursor: pointer; }
+button.stil { background: transparent; color: var(--accent); border: 1px solid var(--line); }
+button:disabled { opacity: .5; cursor: default; }
+.klein { font-size: .85rem; color: var(--muted); }
+.oefeningen details summary { color: var(--ink); min-height: 44px; }
+.oefeningen details summary::after { content: "toon"; margin-left: 8px; font-size: .8rem; color: var(--accent); }
+.oefeningen details[open] summary::after { content: "verberg"; }
+.demo { display: grid; gap: 6px; margin: 4px 0 10px; }
+.demo-beelden { display: flex; gap: 8px; }
+.demo svg { flex: 1; min-width: 0; max-width: 260px; height: auto; background: var(--bg); border-radius: 8px; }
+.demo .figuur { stroke: var(--ink); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+.demo .figuur-hoofd { fill: var(--ink); }
+.demo .gewicht { fill: var(--accent); }
+.demo .vloer { stroke: var(--muted); stroke-width: 2; }
+.demo .doos { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+.demo .grens { stroke: var(--bad); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.demo .grens-tekst { fill: var(--bad); font: 600 10px var(--body); }
+.demo ul { margin: 0; padding-left: 1.2em; font-size: .9rem; }
+.demo .kine { color: var(--bad); font-weight: 600; font-size: .9rem; }
+.demo .elastiek { stroke: var(--tweede); stroke-width: 3; stroke-linecap: round; }
+.demo .nieuw { color: var(--warn); font-weight: 600; font-size: .9rem; }
+.chip.bron-coach { background: var(--bg); color: var(--muted); border: 1px solid var(--line); }
+.oefeningen details summary { gap: 4px 8px; flex-wrap: wrap; }
+.invoer { background: var(--panel); border: 0; border-radius: 16px; padding: 10px 12px; display: grid; gap: 8px; }
+#pijninvoer { gap: 10px 16px; }
+@media (min-width: 640px) { #pijninvoer { grid-template-columns: repeat(2, minmax(0, 1fr)); } #pijninvoer > .postlijst { grid-column: 1 / -1; } }
+.invoer fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: 6px; min-width: 0; align-content: start; }
+.invoer legend { font-family: var(--display); font-weight: 600; font-size: 1rem; padding: 0; margin-bottom: 2px; }
+.scores { display: grid; grid-template-columns: repeat(11, minmax(0, 1fr)); gap: 3px; }
+.scores button { padding: 4px 0; font: 800 1rem var(--display); border-radius: 8px; }
+.scores button, .keuze button { background: var(--panel2); color: var(--ink); border: 1px solid var(--panel2); font-variant-numeric: tabular-nums; }
+.keuze button, .keuze input { min-height: 40px; }
+.scores button[aria-pressed="true"], .keuze button[aria-pressed="true"] { background: var(--accent); color: var(--panel); border-color: var(--accent); }
+.scores button.boven { color: var(--bad); }
+.scores button.boven[aria-pressed="true"] { background: var(--bad); color: var(--panel); border-color: var(--bad); }
+.keuze { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.keuze button { padding: 4px 14px; }
+input[type="date"], input[type="number"] { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-height: 44px; box-sizing: border-box; }
+input[type="number"] { width: 7em; }
+input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.bericht { font-size: .9rem; }
+.bericht.fout { color: var(--bad); }
+.postlijst { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.postlijst:empty, .bericht:empty { display: none; }
+.postlijst li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: .92rem; }
+.postlijst .chip.nieuw { background: var(--warn-soft); color: var(--warn); }
+.postlijst .chip.vraag, .postlijst .chip.fout { background: var(--bad-soft); color: var(--bad); }
+.postlijst button { min-height: 44px; padding: 4px 12px; font-size: .85rem; }
+.bevestig { justify-self: start; }
+.invoer fieldset, details { scroll-margin-top: 64px; }
+.bericht.ok { color: var(--ok); }
+button.link { background: none; border: 0; padding: 0; min-height: 0; color: var(--accent); font: inherit; text-decoration: underline; }
+.herinnering { border-left: 4px solid var(--warn); background: var(--panel); padding: 6px 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; border-radius: 4px 14px 14px 4px; }
+.herinnering > span { font-weight: 600; margin-right: 2px; }
+.herinnering button { min-height: 36px; padding: 4px 12px; font-size: .85rem; background: var(--warn-soft); color: var(--warn); }
+details.ftp > summary { color: var(--ink); font-family: var(--display); font-weight: 600; font-size: 1.05rem; }
+details.ftp[data-soort="bijwerken"] > summary, details.ftp[data-soort="verouderd"] > summary, details.ftp[data-soort="geen_garmin"] > summary { color: var(--warn); }
+
+/* Pagina op GitHub Pages: sleutel ingeven, laden, geen verbinding, voet */
+select { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-height: 44px; max-width: 100%; }
+input[type="password"] { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-height: 44px; box-sizing: border-box; width: 100%; }
+.sleutel { display: grid; gap: 12px; max-width: 34rem; }
+.sleutel ol { padding-left: 1.2em; margin: 0; display: grid; gap: 4px; }
+.voet { display: flex; flex-wrap: wrap; gap: 8px 20px; justify-content: center; padding: 24px 0 8px; font-size: .9rem; }
+#laden { padding: 32px 16px; text-align: center; color: var(--muted); }
+#verbinding:empty { display: none; }
+</style>
+</head>
+<body>
+<section class="pagina sleutel" id="sleutel" hidden>
+  <h1>MyCoach</h1>
+  <p>Deze pagina leest je trainingen en je pijnscores rechtstreeks uit intervals.icu. Daarvoor heeft ze je persoonlijke API-sleutel nodig. Die blijft alleen op deze gsm, in deze browser.</p>
+  <ol>
+    <li>Open intervals.icu en ga naar <b>Settings → Developer Settings</b>.</li>
+    <li>Kopieer je <b>API key</b>.</li>
+    <li>Plak ze hieronder en bewaar.</li>
+  </ol>
+  <form id="sleutel-form" autocomplete="off">
+    <label class="label" for="sleutel-veld">API-sleutel van intervals.icu</label>
+    <input type="password" id="sleutel-veld" autocomplete="off" autocapitalize="off" spellcheck="false" required>
+    <p style="margin-top:12px"><button type="submit">Bewaar op deze gsm</button></p>
+    <p class="bericht" id="sleutel-bericht" role="status" aria-live="polite"></p>
+  </form>
+  <p class="klein">Ben je je gsm kwijt? Maak dan in intervals.icu een nieuwe sleutel: de oude werkt meteen niet meer.</p>
+</section>
+<p id="laden" role="status">MyCoach laadt je gegevens uit intervals.icu…</p>
+<main class="pagina" id="inhoud" hidden>
+  <header class="kop">
+    <div>
+      <h1>MyCoach</h1>
+      <p class="label" id="titel">Deze week</p>
+      <p class="klein" id="tijdstip"></p>
+      <p class="bericht" id="verbinding" role="status" aria-live="polite"></p>
+    </div>
+    <span class="stand" id="stand"></span>
+  </header>
+
+  <section id="meldingen" aria-label="Meldingen" hidden>
+    <div class="meldingen" id="signalen-rood" hidden></div>
+    <div class="meldingen" id="herinnering" aria-label="Nog door te geven" hidden></div>
+    <div class="meldingen" id="signalen" hidden></div>
+  </section>
+
+  <section id="vandaag" aria-label="Vandaag" hidden></section>
+
+  <section class="groot" id="groot" aria-label="Deze week in cijfers"></section>
+
+  <section aria-labelledby="t-week">
+    <h2 id="t-week">Weekschema</h2>
+    <div class="dagen" id="weekplan"></div>
+  </section>
+
+  <section aria-label="Pijn, belasting en wedstrijd">
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tab-pijn" aria-controls="p-pijn">Pijn</button>
+      <button role="tab" id="tab-belasting" aria-controls="p-belasting">Belasting</button>
+      <button role="tab" id="tab-weg" aria-controls="p-weg">Wedstrijd</button>
+    </div>
+
+    <div class="paneel" role="tabpanel" id="p-pijn" aria-labelledby="tab-pijn">
+      <h2>Pijn in je knie</h2>
+      <div class="invoer" id="pijninvoer" hidden>
+        <fieldset id="knie-veld">
+          <legend>Kniepijn na je training</legend>
+          <p class="klein" id="knie-uitleg"></p>
+          <div class="keuze"><select id="knie-training" aria-label="Bij welke training"></select></div>
+          <div class="scores" id="knie-scores" role="group" aria-label="Kniepijn van 0 tot 10"></div>
+          <button class="bevestig" id="knie-bevestig" disabled>Kies eerst een score</button>
+          <p class="bericht" id="knie-bericht" role="status" aria-live="polite"></p>
+        </fieldset>
+        <fieldset id="ochtend-veld">
+          <legend>Ochtendpijn bij de ochtendtest</legend>
+          <p class="klein" id="ochtend-uitleg"></p>
+          <div class="keuze"><input type="date" id="ochtend-datum" aria-label="Datum van de ochtend"></div>
+          <div class="scores" id="ochtend-scores" role="group" aria-label="Ochtendpijn van 0 tot 10"></div>
+          <button class="bevestig" id="ochtend-bevestig" disabled>Kies eerst een score</button>
+          <p class="bericht" id="ochtend-bericht" role="status" aria-live="polite"></p>
+        </fieldset>
+        <ul class="postlijst" id="pijn-post"></ul>
+      </div>
+      <div class="grafiek" id="pijngrafiek"></div>
+      <div class="legenda"><span><i style="background:var(--accent)"></i>Kniepijn na training</span><span><i style="background:var(--tweede)"></i>Ochtendpijn</span><span><i style="background:var(--bad)"></i>Grens van 3</span></div>
+      <details id="schaal-uitklap"><summary>Pijnschaal 0 tot 10</summary>
+        <p class="klein">Kies een score en bevestig met de knop. Je score gaat meteen naar intervals.icu, en de waarschuwingen rekenen meteen opnieuw. Zonder verbinding bewaart je gsm ze tot er weer verbinding is.</p>
+        <p class="klein" id="schaal-uitleg"></p>
+        <div class="schaal" id="schaal"></div></details>
+    </div>
+
+    <div class="paneel" role="tabpanel" id="p-belasting" aria-labelledby="tab-belasting" hidden>
+      <h2>Belasting en vorm</h2>
+      <div class="cijfers" id="cijfers"></div>
+      <div class="grafiek" id="belastinggrafiek"></div>
+      <div class="legenda"><span><i style="background:var(--accent)"></i>Fitheid</span><span><i style="background:var(--tweede)"></i>Vermoeidheid</span><span><i style="background:var(--line);height:8px"></i>Belasting per dag</span></div>
+      <details id="belasting-uitleg"><summary>Wat betekenen deze cijfers?</summary><div class="uitleg">
+        <p><b>Fitheid</b> is je gemiddelde trainingsbelasting van ongeveer de laatste zes weken: hoeveel training je lichaam gewend is. Ze stijgt traag als je regelmatig traint.</p>
+        <p><b>Vermoeidheid</b> is hetzelfde over ongeveer de laatste week. Na een zware MTB-rit springt ze omhoog.</p>
+        <p><b>Vorm</b> is fitheid min vermoeidheid. Licht negatief (tot ongeveer -10) is normaal tijdens een opbouw; rond -20 of lager moet je goed herstellen. Meer in <code>data/leren.md</code>.</p>
+      </div></details>
+      <details class="ftp" id="ftp-uitklap">
+        <summary><span id="ftp-titel">FTP</span></summary>
+        <div class="invoer">
+          <p id="ftp-tekst"></p>
+          <p class="klein" id="ftp-eftp" hidden></p>
+          <div id="ftp-invoer" hidden>
+            <p class="label">FTP van je Garmin ingeven</p>
+            <div class="keuze" style="margin-top:6px">
+              <input type="number" id="ftp-waarde" inputmode="numeric" min="50" max="600" placeholder="255" aria-label="FTP in watt"> <span class="klein">W</span>
+              <input type="date" id="ftp-datum" aria-label="Datum van de FTP-schatting">
+              <button id="ftp-bewaar">Bewaar FTP</button>
+            </div>
+            <p class="bericht" id="ftp-bericht" role="status" aria-live="polite"></p>
+            <ul class="postlijst" id="ftp-post"></ul>
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <div class="paneel" role="tabpanel" id="p-weg" aria-labelledby="tab-weg" hidden>
+      <h2 id="weg-titel">De weg naar je wedstrijd</h2>
+      <div id="progressie" class="paneel"></div>
+    </div>
+  </section>
+  <footer class="voet">
+    <button class="link" id="ververs">Ververs</button>
+    <button class="link" id="vergeet">Vergeet de sleutel op deze gsm</button>
+  </footer>
+</main>
+<script type="module" src="js/pagina/app.js"></script>
+</body>
+</html>
