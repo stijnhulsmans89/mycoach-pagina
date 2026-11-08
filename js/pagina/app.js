@@ -1,6 +1,6 @@
-// De pagina op de gsm: leest intervals.icu live, rekent met dezelfde regels als de coach, en zet pijnscores en de
+// De pagina op de gsm en de Mac: leest intervals.icu live, rekent met dezelfde regels als de coach, en zet pijnscores en de
 // Garmin-FTP rechtstreeks in intervals.icu. Zonder verbinding toont ze de laatste momentopname en bewaart ze wat je
-// ingeeft tot er weer verbinding is. De sleutel staat alleen in de browseropslag van de gsm.
+// ingeeft tot er weer verbinding is. De sleutel staat alleen in de browseropslag van de gsm en van één web-app op de Mac.
 
 import { AdapterFout,          } from "../bronnen.js";
 import { dashboardData } from "../dashboard.js";
@@ -135,7 +135,7 @@ function teken(m              , adapter                , verbinding        )    
   bindInvoer(m, adapter, hulp);
   $("ververs").onclick = () => { $("verbinding").textContent = "Bezig met verversen…"; void laad(); };
   $("vergeet").onclick = () => {
-    if (!confirm("De sleutel en de laatste momentopname van deze gsm wissen?")) return;
+    if (!confirm("De sleutel en de laatste momentopname op dit toestel wissen?")) return;
     for (const k of [SLEUTEL, LAATSTE, WACHTRIJ]) opslag.wis(k);
     vraagSleutel();
   };
@@ -144,6 +144,7 @@ function teken(m              , adapter                , verbinding        )    
 // --- De invoervelden ------------------------------------------------------------------
 
 const DAG = new Intl.DateTimeFormat("nl-BE", { weekday: "short", day: "numeric", month: "short" });
+const SOORTNAAM                         = { loopje: "Loopje", mtb: "MTB", rollen: "Rollen", kracht: "Kracht" };
 
 function bindInvoer(m              , adapter                , hulp     )       {
   const { D, velden } = m;
@@ -173,7 +174,7 @@ function bindInvoer(m              , adapter                , hulp     )       {
     } catch (fout) {
       if (fout instanceof GeenVerbinding) {
         opslag.zet(WACHTRIJ, JSON.stringify([...wachtrij(), invoer]));
-        bericht(invoer.soort, `Geen verbinding: ${omschrijving} is bewaard op je gsm en gaat naar intervals.icu zodra er verbinding is.`, "ok");
+        bericht(invoer.soort, `Geen verbinding: ${omschrijving} is bewaard op dit toestel en gaat naar intervals.icu zodra er verbinding is.`, "ok");
       } else {
         bericht(invoer.soort, `Dat lukte niet: ${(fout         ).message}`, "fout");
       }
@@ -185,7 +186,8 @@ function bindInvoer(m              , adapter                , hulp     )       {
   const keuzeKnie = $                   ("knie-training");
   keuzeKnie.replaceChildren();
   for (const a of trainingen) {
-    const optie = el("option", null, `${DAG.format(new Date(`${a.datum}T12:00:00`))} · ${a.naam || a.type} (${a.minuten} min)` +
+    // een kort label van de pagina zelf: een naam uit Garmin kan eindeloos lang zijn
+    const optie = el("option", null, `${DAG.format(new Date(`${a.datum}T12:00:00`))} · ${SOORTNAAM[a.soort] ?? a.type} · ${a.minuten} min` +
       (a.kniepijn != null ? ` · nu ${a.kniepijn}` : ""));
     optie.value = String(a.id);
     keuzeKnie.append(optie);
@@ -307,7 +309,7 @@ $                 ("sleutel-form").onsubmit = (e) => {
   void laad();
 };
 
-// de bestanden van de pagina op de gsm houden, voor zonder verbinding (eerst het netwerk, dus altijd de nieuwste versie)
+// de bestanden van de pagina op het toestel houden, voor zonder verbinding (eerst het netwerk, dus altijd de nieuwste versie)
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").catch(() => { /* zonder service worker werkt de pagina ook, alleen niet offline */ });
 }

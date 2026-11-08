@@ -12,6 +12,7 @@
 <title>MyCoach</title>
 <style>
 /* Layout: mobiel eerst. Meldingen, dan de kaart Vandaag, drie grote cijfers en de week als dagkaarten; de rest in tabs.
+   Vanaf 1024 px een dashboard zonder tabs (onderaan). Controle: coach/pagina/controleer-opmaak.js.
    Palet "Nacht" (spec dashboard-runna): donker is de hoofdversie, licht volgt de systeeminstelling.
    --t-*: vaste kleur per soort training. --ok/--warn/--bad: betekenis, los van de soorten. */
 :root {
@@ -29,7 +30,7 @@
     --bg: #f3f4fa; --panel: #ffffff; --panel2: #e8eaf4; --ink: #141830; --muted: #5d6386; --line: #dfe2ef;
     --accent: #2f62d9; --accent-soft: #e4ebfb; --tweede: #e5265a;
     --t-rustig: #14a86b; --t-hard: #e5265a; --t-mtb: #e57a12; --t-rollen: #7c5ce6; --t-kracht: #c99800; --t-rust: #8a8fab;
-    --ok: #12804f; --warn: #a35f00; --bad: #c62828;
+    --ok: #12804f; --warn: #945600; --bad: #c62828;
     --ok-soft: #dcf5e7; --warn-soft: #fdf0d9; --bad-soft: #fde3e3; color-scheme: light;
   }
 }
@@ -37,7 +38,7 @@
   --bg: #f3f4fa; --panel: #ffffff; --panel2: #e8eaf4; --ink: #141830; --muted: #5d6386; --line: #dfe2ef;
   --accent: #2f62d9; --accent-soft: #e4ebfb; --tweede: #e5265a;
   --t-rustig: #14a86b; --t-hard: #e5265a; --t-mtb: #e57a12; --t-rollen: #7c5ce6; --t-kracht: #c99800; --t-rust: #8a8fab;
-  --ok: #12804f; --warn: #a35f00; --bad: #c62828;
+  --ok: #12804f; --warn: #945600; --bad: #c62828;
   --ok-soft: #dcf5e7; --warn-soft: #fdf0d9; --bad-soft: #fde3e3; color-scheme: light;
 }
 body { background: var(--bg); color: var(--ink); font: 16px/1.5 var(--body); -webkit-text-size-adjust: 100%; }
@@ -79,14 +80,14 @@ details.waarschuwing > p:last-child { margin-bottom: 12px; }
 details.dag > summary::-webkit-details-marker { display: none; }
 details.dag > .training { padding-left: 14px; }
 .dag-datum { text-align: center; font-family: var(--display); line-height: 1; }
-.dag-datum span { display: block; font-size: .65rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+.dag-datum span { display: block; font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 .dag-datum b { display: block; font-size: 1.3rem; font-weight: 800; font-variant-numeric: tabular-nums; }
 .dag-naam { display: grid; gap: 5px; min-width: 0; font-weight: 600; font-size: .95rem; }
 .dag-naam .regel { display: flex; gap: 6px; align-items: center; min-width: 0; }
 .dag-naam .regel > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dag-naam .icoon { color: var(--kleur); }
 .dag-duur { font: 800 1.15rem/1 var(--display); font-variant-numeric: tabular-nums; text-align: right; }
-.dag-duur small { display: block; font: 600 .7rem var(--body); color: var(--ok); margin-top: 3px; }
+.dag-duur small { display: block; font: 600 .75rem var(--body); color: var(--ok); margin-top: 3px; }
 .dag-kop { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
 .icoon { width: 18px; height: 18px; flex: none; }
 /* Blokjesgrafiek: breedte = duur, hoogte = intensiteit, stippellijn = grens van zone 2 */
@@ -102,19 +103,22 @@ details.dag > .training { padding-left: 14px; }
 .vandaagkaart h3 { font-size: 1.6rem; line-height: 1.05; text-transform: uppercase; }
 .vandaagkaart .duur { font: 800 3.4rem/.9 var(--display); color: var(--kleur); font-variant-numeric: tabular-nums; }
 .vandaagkaart .duur small { font-size: 1.2rem; color: var(--muted); }
+/* licht: de kleur van de soort is te bleek op wit voor het grote getal, dus een tikje donkerder */
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .vandaagkaart .duur { color: color-mix(in srgb, var(--kleur) 75%, var(--ink)); } }
+:root[data-theme="light"] .vandaagkaart .duur { color: color-mix(in srgb, var(--kleur) 75%, var(--ink)); }
 .vandaagkaart + .vandaagkaart { margin-top: -6px; }
-.soort { display: inline-flex; align-items: center; gap: 6px; font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; border-radius: 999px; padding: 4px 10px;
-  background: color-mix(in srgb, var(--kleur) 18%, transparent); color: var(--kleur); }
+.soort { display: inline-flex; align-items: center; gap: 6px; font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; border-radius: 999px; padding: 4px 10px;
+  background: color-mix(in srgb, var(--kleur) 18%, transparent); color: color-mix(in srgb, var(--kleur) 70%, var(--ink)); }
 .soort.gedaan { --kleur: var(--ok); }
 .stappen { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: .92rem; }
 .stappen li { display: grid; grid-template-columns: 44px 1fr; gap: 10px; }
 .stappen b { font-family: var(--display); font-weight: 800; font-variant-numeric: tabular-nums; }
 /* Drie grote cijfers */
 .groot { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.groot > div { background: var(--panel); border-radius: 16px; padding: 14px 12px; min-width: 0; }
+.groot > div { background: var(--panel); border-radius: 16px; padding: 14px 10px; min-width: 0; }
 .groot b { display: block; font: 800 2rem/1 var(--display); font-variant-numeric: tabular-nums; }
 .groot b small { font-size: 1rem; color: var(--muted); font-weight: 700; }
-.groot .label { display: block; margin-top: 6px; font-size: .68rem; letter-spacing: .12em; }
+.groot .label { display: block; margin-top: 6px; font-size: .75rem; letter-spacing: 0; }
 .groot .duiding { display: block; font-size: .75rem; font-weight: 700; margin-top: 2px; }
 .training { display: grid; gap: 4px; padding-top: 6px; border-top: 1px solid var(--line); }
 .training:first-of-type { border-top: 0; padding-top: 0; }
@@ -141,7 +145,7 @@ details p { margin-top: 4px; }
 .cijfers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .cijfer { background: var(--panel); border: 0; border-radius: 12px; padding: 6px 10px; min-width: 0;
   display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 0 8px; }
-.cijfer .label { font-size: .7rem; letter-spacing: .03em; }
+.cijfer .label { font-size: .75rem; letter-spacing: .03em; }
 .cijfer b { font: 600 1.15rem/1.2 var(--display); font-variant-numeric: tabular-nums; text-align: right; }
 .cijfer .duiding { grid-column: 1 / -1; font-size: .75rem; color: var(--muted); }
 .cijfer:last-child:nth-child(odd) { grid-column: 1 / -1; }
@@ -197,13 +201,16 @@ button:disabled { opacity: .5; cursor: default; }
 .oefeningen details summary { gap: 4px 8px; flex-wrap: wrap; }
 .invoer { background: var(--panel); border: 0; border-radius: 16px; padding: 10px 12px; display: grid; gap: 8px; }
 #pijninvoer { gap: 10px 16px; }
-@media (min-width: 640px) { #pijninvoer { grid-template-columns: repeat(2, minmax(0, 1fr)); } #pijninvoer > .postlijst { grid-column: 1 / -1; } }
-.invoer fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: 6px; min-width: 0; align-content: start; }
+#p-pijn { container: pijn / inline-size; }
+@container pijn (min-width: 640px) { #pijninvoer { grid-template-columns: repeat(2, minmax(0, 1fr)); } #pijninvoer > .postlijst { grid-column: 1 / -1; } }
+.invoer fieldset { border: 0; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; min-width: 0; align-content: start; container-type: inline-size; }
 .invoer legend { font-family: var(--display); font-weight: 600; font-size: 1rem; padding: 0; margin-bottom: 2px; }
-.scores { display: grid; grid-template-columns: repeat(11, minmax(0, 1fr)); gap: 3px; }
+.scores { display: grid; grid-template-columns: repeat(11, minmax(44px, 1fr)); gap: 3px; }
+@container (max-width: 519px) { .scores { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; } }
 .scores button { padding: 4px 0; font: 800 1rem var(--display); border-radius: 8px; }
 .scores button, .keuze button { background: var(--panel2); color: var(--ink); border: 1px solid var(--panel2); font-variant-numeric: tabular-nums; }
-.keuze button, .keuze input { min-height: 40px; }
+.keuze button, .keuze input { min-height: 44px; }
+.keuze select { flex: 1 1 12rem; min-width: 0; text-overflow: ellipsis; }
 .scores button[aria-pressed="true"], .keuze button[aria-pressed="true"] { background: var(--accent); color: var(--panel); border-color: var(--accent); }
 .scores button.boven { color: var(--bad); }
 .scores button.boven[aria-pressed="true"] { background: var(--bad); color: var(--panel); border-color: var(--bad); }
@@ -235,15 +242,47 @@ select { font: inherit; color: var(--ink); background: var(--bg); border: 1px so
 input[type="password"] { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-height: 44px; box-sizing: border-box; width: 100%; }
 .sleutel { display: grid; gap: 12px; max-width: 34rem; }
 .sleutel ol { padding-left: 1.2em; margin: 0; display: grid; gap: 4px; }
-.voet { display: flex; flex-wrap: wrap; gap: 8px 20px; justify-content: center; padding: 24px 0 8px; font-size: .9rem; }
+.voet { display: flex; flex-wrap: wrap; gap: 0 20px; justify-content: center; padding: 16px 0 8px; font-size: .9rem; }
+.voet button.link { min-height: 44px; padding: 0 4px; }
 #laden { padding: 32px 16px; text-align: center; color: var(--muted); }
 #verbinding:empty { display: none; }
+
+/* Desktop (vanaf 1024 px): alles in één zicht, zonder tabs.
+   Meldingen bovenaan, Vandaag naast de drie cijfers, de week als strook van zeven dagen,
+   Pijn en Belasting naast elkaar en De weg naar je wedstrijd eronder. */
+.dag-detail { display: none; }
+@media (min-width: 1024px) {
+  #inhoud.pagina { max-width: 1200px; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: start; padding-left: 32px; padding-right: 32px; }
+  #inhoud > :not(#vandaag):not(#groot) { grid-column: 1 / -1; }
+  #vandaag[hidden] + #groot { grid-column: 1 / -1; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .meldingen { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+  .meldingen > :only-child { grid-column: 1 / -1; }
+  .groot { grid-template-columns: minmax(0, 1fr); align-self: stretch; grid-auto-rows: 1fr; }
+  .groot > div { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; column-gap: 14px; padding: 16px 18px; }
+  .groot > div > b { grid-row: span 2; font-size: 2.4rem; }
+  .groot .label { margin-top: 0; }
+  .dagen { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+  .dagen > :not(.dag) { grid-column: 1 / -1; }
+  .dag { border-left: 0; border-top: 5px solid var(--kleur, var(--t-rust)); padding: 0; }
+  .dag[open] { padding-bottom: 0; box-shadow: inset 0 0 0 2px var(--kleur, var(--accent)); }
+  .dag > .training { display: none; }
+  .dag-rij { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr auto; align-items: start; gap: 8px; min-height: 150px; padding: 12px; }
+  .dag-datum { text-align: left; display: flex; gap: 6px; align-items: baseline; }
+  .dag-duur { text-align: left; }
+  .dag-naam .regel { align-items: start; }
+  .dag-naam .regel > span { white-space: normal; overflow-wrap: anywhere; }
+  .dag-detail:not(:empty) { display: grid; gap: 10px; background: var(--panel); border-radius: 14px; padding: 14px 18px; border-left: 5px solid var(--kleur, var(--accent)); }
+  .dag-detail h3 { font-size: 1rem; text-transform: uppercase; letter-spacing: .06em; }
+  .tabs { display: none; }
+  #panelen { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-items: start; }
+  #p-weg { grid-column: 1 / -1; }
+}
 </style>
 </head>
 <body>
 <section class="pagina sleutel" id="sleutel" hidden>
   <h1>MyCoach</h1>
-  <p>Deze pagina leest je trainingen en je pijnscores rechtstreeks uit intervals.icu. Daarvoor heeft ze je persoonlijke API-sleutel nodig. Die blijft alleen op deze gsm, in deze browser.</p>
+  <p>Deze pagina leest je trainingen en je pijnscores rechtstreeks uit intervals.icu. Daarvoor heeft ze je persoonlijke API-sleutel nodig. Die blijft alleen op dit toestel, in deze browser.</p>
   <ol>
     <li>Open intervals.icu en ga naar <b>Settings → Developer Settings</b>.</li>
     <li>Kopieer je <b>API key</b>.</li>
@@ -252,10 +291,10 @@ input[type="password"] { font: inherit; color: var(--ink); background: var(--bg)
   <form id="sleutel-form" autocomplete="off">
     <label class="label" for="sleutel-veld">API-sleutel van intervals.icu</label>
     <input type="password" id="sleutel-veld" autocomplete="off" autocapitalize="off" spellcheck="false" required>
-    <p style="margin-top:12px"><button type="submit">Bewaar op deze gsm</button></p>
+    <p style="margin-top:12px"><button type="submit">Bewaar op dit toestel</button></p>
     <p class="bericht" id="sleutel-bericht" role="status" aria-live="polite"></p>
   </form>
-  <p class="klein">Ben je je gsm kwijt? Maak dan in intervals.icu een nieuwe sleutel: de oude werkt meteen niet meer.</p>
+  <p class="klein">Ben je je gsm of je Mac kwijt? Maak dan in intervals.icu een nieuwe sleutel: de oude werkt meteen niet meer.</p>
 </section>
 <p id="laden" role="status">MyCoach laadt je gegevens uit intervals.icu…</p>
 <main class="pagina" id="inhoud" hidden>
@@ -284,7 +323,7 @@ input[type="password"] { font: inherit; color: var(--ink); background: var(--bg)
     <div class="dagen" id="weekplan"></div>
   </section>
 
-  <section aria-label="Pijn, belasting en wedstrijd">
+  <section id="panelen" aria-label="Pijn, belasting en wedstrijd">
     <div class="tabs" role="tablist">
       <button role="tab" id="tab-pijn" aria-controls="p-pijn">Pijn</button>
       <button role="tab" id="tab-belasting" aria-controls="p-belasting">Belasting</button>
@@ -315,7 +354,7 @@ input[type="password"] { font: inherit; color: var(--ink); background: var(--bg)
       <div class="grafiek" id="pijngrafiek"></div>
       <div class="legenda"><span><i style="background:var(--accent)"></i>Kniepijn na training</span><span><i style="background:var(--tweede)"></i>Ochtendpijn</span><span><i style="background:var(--bad)"></i>Grens van 3</span></div>
       <details id="schaal-uitklap"><summary>Pijnschaal 0 tot 10</summary>
-        <p class="klein">Kies een score en bevestig met de knop. Je score gaat meteen naar intervals.icu, en de waarschuwingen rekenen meteen opnieuw. Zonder verbinding bewaart je gsm ze tot er weer verbinding is.</p>
+        <p class="klein">Kies een score en bevestig met de knop. Je score gaat meteen naar intervals.icu, en de waarschuwingen rekenen meteen opnieuw. Zonder verbinding bewaart dit toestel ze tot er weer verbinding is.</p>
         <p class="klein" id="schaal-uitleg"></p>
         <div class="schaal" id="schaal"></div></details>
     </div>
@@ -356,7 +395,7 @@ input[type="password"] { font: inherit; color: var(--ink); background: var(--bg)
   </section>
   <footer class="voet">
     <button class="link" id="ververs">Ververs</button>
-    <button class="link" id="vergeet">Vergeet de sleutel op deze gsm</button>
+    <button class="link" id="vergeet">Vergeet de sleutel op dit toestel</button>
   </footer>
 </main>
 <script type="module" src="js/pagina/app.js"></script>

@@ -1,5 +1,5 @@
 // De weergave van de pagina: tekent alles uit D, de gegevens die `dashboardData` berekent.
-// Overgenomen van het claude.ai-dashboard (coach/dashboard.html), zodat versie 1 er hetzelfde uitziet.
+// Overgenomen van het vroegere claude.ai-dashboard, zodat versie 1 van de pagina er hetzelfde uitzag.
 // Gewoon JavaScript: de typecontrole slaat dit bestand over; de bouwstap kopieert het zoals het is.
 
 let naResize = null;
@@ -297,10 +297,21 @@ export function toon(D) {
     const kaart = kleur(el("details", "dag" + extra), soortVan(trainingen[0]));
     kaart.append(rij);
     for (const t of trainingen) kaart.append(training(t));
+    // desktop: de dagen staan als smalle strook naast elkaar, dus de uitleg van de open dag komt eronder
+    kaart.addEventListener("toggle", () => {
+      if (!BREED.matches) return;
+      if (kaart.open) {
+        for (const ander of $("weekplan").querySelectorAll("details.dag[open]")) if (ander !== kaart) ander.open = false;
+        dagDetail.replaceChildren(el("h3", null, `${DAGEN[d.getDay()]} ${kort(dag)}`), ...trainingen.map(training));
+        kleur(dagDetail, soortVan(trainingen[0]));
+      } else if (!$("weekplan").querySelector("details.dag[open]")) dagDetail.replaceChildren();
+    });
     return kaart;
   }
 
   // Het weekschema: maandag tot zondag
+  const BREED = matchMedia("(min-width: 1024px)");
+  const dagDetail = el("div", "dag-detail");
   const plan = D.weekplan;
   const volgendeWeek = D.week > VANDAAG;
   $("titel").textContent = volgendeWeek ? "Volgende week" : "Deze week";
@@ -312,6 +323,7 @@ export function toon(D) {
       const dag = plusDagen(plan.week, i);
       $("weekplan").append(dagkaart(dag, plan.trainingen.filter((t) => t.datum === dag)));
     }
+    $("weekplan").append(dagDetail);
     if (plan.uitleg) { const det = el("details"); det.append(el("summary", null, "Waarom deze week zo is"), el("p", null, plan.uitleg)); $("weekplan").append(det); }
   }
   vandaagKaarten(plan);
@@ -541,7 +553,8 @@ export function toon(D) {
   }
   bouwProgressie();
 
-  // Tabs: de grafieken worden getekend als hun tab zichtbaar is, zodat ze de juiste breedte hebben
+  // Tabs: de grafieken worden getekend als hun tab zichtbaar is, zodat ze de juiste breedte hebben.
+  // Vanaf 1024 px zijn er geen tabs: alle panelen staan open en alle grafieken worden getekend.
   const TABS = { pijn: [tekenPijn], belasting: [tekenBelasting], weg: [() => tekenVolume(), () => tekenFiets(), () => tekenFitheid()] };
   let open = TABS[bewaar.lees("mycoach-tab")] ? bewaar.lees("mycoach-tab") : "pijn";
   function kies(naam) {
@@ -549,9 +562,9 @@ export function toon(D) {
     for (const t of Object.keys(TABS)) {
       $("tab-" + t).setAttribute("aria-selected", String(t === naam));
       $("tab-" + t).tabIndex = t === naam ? 0 : -1;
-      $("p-" + t).hidden = t !== naam;
+      $("p-" + t).hidden = !BREED.matches && t !== naam;
     }
-    for (const teken of TABS[naam]) teken();
+    for (const t of BREED.matches ? Object.keys(TABS) : [naam]) for (const teken of TABS[t]) teken();
   }
   for (const t of Object.keys(TABS)) $("tab-" + t).onclick = () => kies(t);
   $("tab-pijn").parentElement.addEventListener("keydown", (e) => {
