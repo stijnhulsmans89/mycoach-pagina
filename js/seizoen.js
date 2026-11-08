@@ -1,52 +1,19 @@
-// Wedstrijden, de fases van het seizoensplan en het kine-checkpoint: de leeskant.
-// De schrijfkant (wedstrijd zetten, seizoensplan maken) staat in seizoensplan.ts.
+// Wedstrijden, de fases van het seizoensplan en het kine-checkpoint: de leeskant, ook voor de pagina.
+// De schrijfkant (wedstrijd zetten, seizoensplan maken) staat in seizoensplan.ts: haar teksten mogen niet
+// op de publieke pagina (zie daar).
 
-                                                                        
+                                                               
 import { dagenTussen, plusDagen,            } from "./datum.js";
-import { pyRound } from "./py.js";
-import { datumVan, TYPES_PER_SOORT,                   } from "./regels.js";
+                                                           
+                                                
 
-export const RACE                         = { RACE_A: "A", RACE_B: "B", RACE_C: "C" };
-const FIETSTYPES = TYPES_PER_SOORT.mtb;
-// hoogtemeters hebben geen eigen veld in een event: ze staan als regel in de beschrijving
-const HOOGTEMETERS = /^Hoogtemeters: (\d+)$/m;
+                          
+
 export const VOORUIT_DAGEN = 400;
 export const HERSTEL_NA_A_DAGEN = 28;
 
-                            
-               
-                      
-                         
-                     
-                            
-                              
-                          
-                                   
- 
-
-/** Race-events in domeintaal, oplopend op datum. */
-export function wedstrijden(events       )              {
-  const resultaat              = [];
-  for (const event of events) {
-    if (!(event.category in RACE)) continue;
-    const afstand = event.distance, duur = event.moving_time;
-    const hoogte = HOOGTEMETERS.exec(event.description || "");
-    resultaat.push({
-      datum: datumVan(event),
-      naam: event.name ?? null,
-      sport: FIETSTYPES.has(event.type) ? "mtb" : "lopen",
-      prioriteit: RACE[event.category],
-      afstand_km: afstand ? pyRound(afstand / 1000, 1) : null,
-      hoogtemeters: hoogte ? Number(hoogte[1]) : null,
-      duur_min: duur ? pyRound(duur / 60) : null,
-      event_id: event.id ?? null,
-    });
-  }
-  return resultaat.sort((a, b) => (a.datum < b.datum ? -1 : a.datum > b.datum ? 1 : 0));
-}
-
-export async function haalWedstrijden(adapter         , vandaag       )                       {
-  return wedstrijden(await adapter.events(plusDagen(vandaag, -HERSTEL_NA_A_DAGEN), plusDagen(vandaag, VOORUIT_DAGEN)));
+export async function haalWedstrijden(intervals           , vandaag       )                       {
+  return intervals.wedstrijden(plusDagen(vandaag, -HERSTEL_NA_A_DAGEN), plusDagen(vandaag, VOORUIT_DAGEN));
 }
 
 export function faseOp(seizoensplan            , dag       )             {

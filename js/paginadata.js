@@ -1,6 +1,8 @@
-// De gegevens voor het dashboard. Bevat nooit de API-sleutel.
+// De pagina-data: alles wat de pagina toont, en de keuzes die ze maakt (standaardtraining, herinneringen,
+// ernst van een waarschuwing). De pagina tekent alleen; zo is wat ze beslist getest. Bevat nooit de API-sleutel.
 
-                                                         
+                                                
+                                                
 import { dagenTussen, maandag, plusDagen, weekdag,            } from "./datum.js";
 import * as momentopname from "./momentopname.js";
                                                 
@@ -11,12 +13,14 @@ import * as seizoen from "./seizoen.js";
 export const ACHTER_MARGE_FITHEID = 3;
 const ROOD = new Set(["kniepijn", "ochtendpijn", "kine"]);
 
+// Bewust verschillend: de pagina toont een voorstel als dat er is (met "nog geen akkoord" erbij), maar het
+// geplande loopvolume telt alleen wat akkoord heeft. De notities in intervals.icu bevatten nooit een voorstel.
 function weekplanKort(plan     ) {
   const huidig = plan.voorstel || plan.akkoord;
   return { week: plan.week, status: plan.status, trainingen: huidig.trainingen, uitleg: huidig.uitleg ?? null };
 }
 
-/** De week op het dashboard: deze week, of volgende week zodra die akkoord heeft. */
+/** De week op de pagina: deze week, of volgende week zodra die akkoord heeft. */
 async function weekschema(opslag        , vandaag       ) {
   const deze = maandag(vandaag);
   const volgende = plusDagen(deze, 7);
@@ -121,14 +125,9 @@ function dezeWeek(status        , vandaag       ) {
   return { loopvolume: { gelopen, toegelaten: opbouw ? opbouw.toegelaten : null }, gedaan };
 }
 
-function lokaalNuInMinuten()         {
-  const nu = new Date();
-  const twee = (n        ) => String(n).padStart(2, "0");
-  return `${nu.getFullYear()}-${twee(nu.getMonth() + 1)}-${twee(nu.getDate())}T${twee(nu.getHours())}:${twee(nu.getMinutes())}`;
-}
-
-export async function dashboardData(adapter         , opslag        , vandaag       ) {
-  const status = await momentopname.status(adapter, opslag, vandaag);
+/** `gemaakt_op` is het tijdstip van de berekening, tot op de minuut (`2026-11-08T21:05`). */
+export async function paginaData(intervals           , opslag        , vandaag       , gemaaktOp        ) {
+  const status = await momentopname.status(intervals, opslag, vandaag);
   const [schaal, profiel, oefeningen] = await Promise.all([opslag.pijnschaal(), opslag.profiel(), opslag.oefeningen()]);
   const belastingPerDag = new Map               ();
   for (const activiteit of status.activiteiten) {
@@ -137,9 +136,19 @@ export async function dashboardData(adapter         , opslag        , vandaag   
   const prog = await progressie(opslag, status, vandaag);
   const kine = profiel.kine;
   const gisteren = plusDagen(vandaag, -1);
+  // de trainingen van de laatste week, nieuwste eerst, om er op de pagina kniepijn bij te zetten
+  const recent = status.activiteiten.filter((a) => a.datum >= plusDagen(vandaag, -7)).reverse().map((a) => ({
+    id: a.id, datum: a.datum, naam: a.naam, type: a.type, soort: regels.soortVan({ type: a.type }), minuten: a.minuten,
+    kniepijn: a.kniepijn,
+  }));
+  // loopjes van gisteren en vandaag zonder kniepijn: de pijnregel draait om het lopen
+  const zonderKniepijn = status.activiteiten
+    .filter((a) => regels.LOOPTYPES.has(a.type ?? "") && a.kniepijn === null && a.datum >= gisteren);
+  // standaard bij het ingeven van kniepijn: zo'n loopje, anders de laatste training
+  const standaard = recent.find((a) => a.soort === "loopje" && a.kniepijn === null && a.datum >= gisteren) ?? recent[0];
   return {
     momentopname: vandaag,
-    gemaakt_op: lokaalNuInMinuten(),
+    gemaakt_op: gemaaktOp,
     indicator: indicator(status.waarschuwingen, prog, vandaag),
     waarschuwingen: status.waarschuwingen.map((w) => ({ ...w, ernst: ROOD.has(w.code) ? "rood" : "gewoon" })),
     voorstellen: status.voorstellen,
@@ -150,9 +159,8 @@ export async function dashboardData(adapter         , opslag        , vandaag   
       ochtendpijn: status.wellness.filter((w) => w.ochtendpijn !== null)
         .map((w) => ({ datum: w.datum, score: w.ochtendpijn })),
       // voor de herinnering: loopjes van gisteren en vandaag zonder kniepijn (de pijnregel draait om het lopen)
-      loopjes_zonder_kniepijn: status.activiteiten
-        .filter((a) => regels.LOOPTYPES.has(a.type ?? "") && a.kniepijn === null && a.datum >= gisteren)
-        .map((a) => ({ datum: a.datum, training: a.naam })),
+      loopjes_zonder_kniepijn: zonderKniepijn.map((a) => ({ id: a.id, datum: a.datum, training: a.naam })),
+      standaard_kniepijn: standaard?.id ?? null,
       grens: schaal.grens,
       schaal: schaal.schaal,
       uitleg: schaal.uitleg,
@@ -172,11 +180,14 @@ export async function dashboardData(adapter         , opslag        , vandaag   
     kine: { oefeningen: kine.oefeningen ?? [], grenzen: kine.grenzen ?? [] },
     oefeningen,
     wedstrijden: status.wedstrijden,
-    // de trainingen van de laatste week, om er op de pagina kniepijn bij te zetten
-    activiteiten_recent: status.activiteiten.filter((a) => a.datum >= plusDagen(vandaag, -7)).reverse().map((a) => ({
-      id: a.id, datum: a.datum, naam: a.naam, type: a.type, soort: regels.soortVan({ type: a.type }), minuten: a.minuten,
-      kniepijn: a.kniepijn,
-    })),
+    activiteiten_recent: recent,
+    // bovenaan de pagina: wat de atleet nog moet ingeven
+    herinneringen: [
+      ...zonderKniepijn.map((a) => ({ soort: "knie"         , activiteit: a.id,
+                                      tekst: `Knie na loopje ${a.datum === vandaag ? "vandaag" : "gisteren"}` })),
+      ...(status.wellness.some((w) => w.datum === vandaag && w.ochtendpijn !== null)
+        ? [] : [{ soort: "ochtend"         , datum: vandaag, tekst: "Ochtendpijn" }]),
+    ],
     progressie: prog,
   };
 }

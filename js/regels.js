@@ -1,98 +1,74 @@
 // De domeinregels uit de glossary, zonder in- of uitvoer.
-// Alle functies werken op de ruwe velden van intervals.icu en op het profiel.
+// Alle functies werken op activiteiten, wellnessdagen en de atleet in domeintaal (uit intervals.ts) en op het
+// profiel; geen enkele kent een veldnaam van intervals.icu.
 // Vertaald uit de vroegere Python-versie; afronden gebeurt nog altijd zoals Python (zie py.ts).
 
                                                            
 import { dagenTussen, maandag, plusDagen,            } from "./datum.js";
+import {                               KENMERK, LOOPTYPES, soortVanType, TYPES_PER_SOORT,                  } from "./intervals.js";
 import { pyFixed0, pyRound } from "./py.js";
 
 export { maandag };
 
-export const KENMERK = "mycoach-"; // begin van de external_id van elk event dat MyCoach aanmaakt
-export const LOOPTYPES = new Set(["Run", "TrailRun"]);
+export { KENMERK, LOOPTYPES, TYPES_PER_SOORT };
 export const FIETSSOORTEN = ["mtb", "rollen"];
-export const TYPES_PER_SOORT                              = {
-  loopje: LOOPTYPES,
-  mtb: new Set(["MountainBikeRide", "Ride", "GravelRide", "EMountainBikeRide"]),
-  rollen: new Set(["VirtualRide"]),
-  kracht: new Set(["WeightTraining"]),
-};
 
-export function datumVan(record     , sleutel = "start_date_local")        {
-  return String(record[sleutel] || record.id).slice(0, 10);
+export function isLoopje(activiteit            )          {
+  return activiteit.soort === "loopje";
 }
 
-export function isLoopje(activiteit     )          {
-  return LOOPTYPES.has(activiteit.type);
+/** De soort training (loopje, mtb, rollen, kracht) bij een sporttype, of null. */
+export function soortVan(activiteit                         )                {
+  return soortVanType(activiteit.type);
 }
 
-/** De soort training (loopje, mtb, rollen, kracht) van een activiteit, of null. */
-export function soortVan(activiteit     )                {
-  for (const [soort, types] of Object.entries(TYPES_PER_SOORT)) {
-    if (types.has(activiteit.type)) return soort;
-  }
-  return null;
-}
-
-function seconden(activiteit     )         {
-  return activiteit.moving_time || activiteit.elapsed_time || 0;
-}
-
-export function minuten(activiteit     )         {
-  return pyRound(seconden(activiteit) / 60);
+export function minuten(activiteit            )         {
+  return pyRound(activiteit.seconden / 60);
 }
 
 // --- Loopvolume ---------------------------------------------------------------
 
                                          
 
-function minutenPerWeek(activiteiten       , eersteMaandag       , laatsteMaandag       ,
-                        telt                     )          {
+function minutenPerWeek(activiteiten              , eersteMaandag       , laatsteMaandag       ,
+                        telt                            )          {
   const totaal          = new Map();
   for (let week = eersteMaandag; week <= laatsteMaandag; week = plusDagen(week, 7)) totaal.set(week, 0);
   for (const activiteit of activiteiten) {
-    const week = maandag(datumVan(activiteit));
-    if (telt(activiteit) && totaal.has(week)) totaal.set(week, totaal.get(week)  + seconden(activiteit));
+    const week = maandag(activiteit.datum);
+    if (telt(activiteit) && totaal.has(week)) totaal.set(week, totaal.get(week)  + activiteit.seconden);
   }
   return new Map([...totaal].map(([week, s]) => [week, pyRound(s / 60)]));
 }
 
 /** Totale looptijd in minuten per week, ook voor weken zonder loopjes. */
-export function loopvolumePerWeek(activiteiten       , eersteMaandag       , laatsteMaandag       )          {
+export function loopvolumePerWeek(activiteiten              , eersteMaandag       , laatsteMaandag       )          {
   return minutenPerWeek(activiteiten, eersteMaandag, laatsteMaandag, isLoopje);
 }
 
 /** Totale tijd op de fiets (MTB en rollen) in minuten per week. */
-export function fietstijdPerWeek(activiteiten       , eersteMaandag       , laatsteMaandag       )          {
+export function fietstijdPerWeek(activiteiten              , eersteMaandag       , laatsteMaandag       )          {
   return minutenPerWeek(activiteiten, eersteMaandag, laatsteMaandag,
-    (a) => FIETSSOORTEN.includes(soortVan(a) ?? ""));
+    (a) => FIETSSOORTEN.includes(a.soort ?? ""));
 }
 
 // --- Profiel en FTP -----------------------------------------------------------
 
-function sportinstelling(atleet     , sport        )      {
-  for (const instelling of atleet.sportSettings || []) {
-    if ((instelling.types || []).includes(sport)) return instelling;
-  }
-  return {};
-}
-
-export function atleetprofiel(atleet     , profiel         )      {
-  const loop = sportinstelling(atleet, "Run");
+/** De drempels uit intervals.icu, aangevuld met die uit het profiel. */
+export function atleetprofiel(atleet        , profiel         )      {
   const basis = profiel.atleet;
   return {
     ...basis,
-    lthr: loop.lthr || basis.lthr,
-    max_hartslag: loop.max_hr || basis.max_hartslag,
-    ftp: sportinstelling(atleet, "Ride").ftp || basis.ftp,
+    lthr: atleet.loop.lthr || basis.lthr,
+    max_hartslag: atleet.loop.max_hartslag || basis.max_hartslag,
+    ftp: atleet.fiets.ftp || basis.ftp,
   };
 }
 
-export function eftp(activiteiten       )                {
-  const gesorteerd = [...activiteiten].sort((a, b) =>
-    vergelijk(b.start_date_local ?? "", a.start_date_local ?? ""));
+export function eftp(activiteiten              )                {
+  const gesorteerd = [...activiteiten].sort((a, b) => vergelijk(b.start, a.start));
   for (const activiteit of gesorteerd) {
-    if (activiteit.icu_rolling_ftp) return activiteit.icu_rolling_ftp;
+    if (activiteit.eftp) return activiteit.eftp;
   }
   return null;
 }
@@ -104,7 +80,7 @@ export function vergelijk(a                 , b                 )         {
 
 const MAANDEN = ["jan", "feb", "mrt", "apr", "mei", "jun", "jul", "aug", "sep", "okt", "nov", "dec"];
 
-/** Een datum zoals op het dashboard: '3 nov'. */
+/** Een datum zoals op de pagina: '3 nov'. */
 export function kort(dag       )         {
   const [, maand, d] = dag.split("-").map(Number);
   return `${d} ${MAANDEN[maand - 1]}`;
@@ -170,12 +146,12 @@ export function ftpVergelijking(ingesteld               , geschat               
                                                            
 
 /** De laatste FTP die de atleet van zijn Garmin doorgaf: een eigen wellness-veld in intervals.icu. */
-export function garminFtp(wellness       , veld        , totEnMet        )                   {
+export function garminFtp(wellness               , totEnMet        )                   {
   let laatste                   = null;
   for (const record of wellness) {
-    const datum = datumVan(record, "id");
-    if (record[veld] == null || (totEnMet && datum > totEnMet)) continue;
-    if (!laatste || datum >= laatste.datum) laatste = { waarde: record[veld], datum };
+    const datum = record.datum;
+    if (record.garmin_ftp == null || (totEnMet && datum > totEnMet)) continue;
+    if (!laatste || datum >= laatste.datum) laatste = { waarde: record.garmin_ftp, datum };
   }
   return laatste;
 }
@@ -193,16 +169,16 @@ export function garminFtp(wellness       , veld        , totEnMet        )      
                           
  
 
-export function activiteitSamenvatting(activiteit     , velden                      )                         {
+export function activiteitSamenvatting(activiteit            )                         {
   return {
-    id: activiteit.id ?? null,
-    datum: datumVan(activiteit),
-    naam: activiteit.name ?? null,
-    type: activiteit.type ?? null,
+    id: activiteit.id,
+    datum: activiteit.datum,
+    naam: activiteit.naam,
+    type: activiteit.type,
     minuten: minuten(activiteit),
-    belasting: activiteit.icu_training_load ?? null,
-    gem_hartslag: activiteit.average_heartrate ?? null,
-    kniepijn: activiteit[velden.kniepijn] ?? null,
+    belasting: activiteit.belasting,
+    gem_hartslag: activiteit.gem_hartslag,
+    kniepijn: activiteit.kniepijn,
   };
 }
 
@@ -217,18 +193,18 @@ export function activiteitSamenvatting(activiteit     , velden                  
                              
  
 
-export function wellnessSamenvatting(record     , velden                         )                       {
-  const [fitheid, vermoeidheid] = ["ctl", "atl"].map((k) => record[k] != null ? pyRound(record[k], 1) : null);
-  const slaap = record.sleepSecs;
+export function wellnessSamenvatting(record             )                       {
+  const [fitheid, vermoeidheid] = [record.fitheid, record.vermoeidheid].map((w) => w !== null ? pyRound(w, 1) : null);
+  const slaap = record.slaap_seconden;
   return {
-    datum: datumVan(record, "id"),
+    datum: record.datum,
     fitheid,
     vermoeidheid,
     vorm: fitheid !== null && vermoeidheid !== null ? pyRound(fitheid - vermoeidheid, 1) : null,
-    hrv: record.hrv ?? null,
-    rusthartslag: record.restingHR ?? null,
+    hrv: record.hrv,
+    rusthartslag: record.rusthartslag,
     slaap_uur: slaap ? pyRound(slaap / 3600, 1) : null,
-    ochtendpijn: record[velden.ochtendpijn] ?? null,
+    ochtendpijn: record.ochtendpijn,
   };
 }
 
@@ -244,12 +220,12 @@ export function huidigeBelasting(wellness                        ) {
 // --- Harde training -----------------------------------------------------------
 
 /** Een harde training door zijn belasting of door intensiteit boven zone 2. Geeft de reden of null. */
-export function hardeTraining(activiteit     , drempels          )                {
-  const belasting = activiteit.icu_training_load || 0;
+export function hardeTraining(activiteit            , drempels          )                {
+  const belasting = activiteit.belasting || 0;
   if (belasting > drempels.harde_training_belasting) {
     return `belasting ${belasting} boven ${drempels.harde_training_belasting}`;
   }
-  const zones           = activiteit.icu_hr_zone_times || [];
+  const zones = activiteit.zone_seconden;
   const bovenZ2 = zones.slice(2).reduce((som, s) => som + s, 0) / 60;
   if (bovenZ2 >= drempels.harde_training_min_boven_z2) return `${pyFixed0(bovenZ2)} minuten boven zone 2`;
   return null;
@@ -259,8 +235,8 @@ export function hardeTraining(activiteit     , drempels          )              
 
                                              
 
-export function ochtendpijnPerDag(wellness       , veld        )              {
-  return new Map(wellness.filter((r) => r[veld] != null).map((r) => [datumVan(r, "id"), r[veld]]));
+export function ochtendpijnPerDag(wellness               )              {
+  return new Map(wellness.filter((r) => r.ochtendpijn != null).map((r) => [r.datum, r.ochtendpijn ]));
 }
 
 /** De eerste ochtend met de vaste ochtendtest (de nulmeting), of null. */
@@ -284,20 +260,20 @@ export function vergelijkbaar(eerder       , later       , start              ) 
  
 
 /** Lopen mag vooruit als de kniepijn hoogstens de grens is en de ochtendpijn de dag erna niet hoger. */
-export function pijnregelWeek(week       , activiteiten       , ochtendpijn             , veld        ,
+export function pijnregelWeek(week       , activiteiten              , ochtendpijn             ,
                               drempels          , start               = null)                {
   const redenen           = [];
   const zonderScore          = [];
   const trainingsdagen = new Set       ();
   for (const activiteit of activiteiten) {
-    const dag = datumVan(activiteit);
+    const dag = activiteit.datum;
     if (maandag(dag) !== week) continue;
     trainingsdagen.add(dag);
-    const score = activiteit[veld];
+    const score = activiteit.kniepijn;
     if (score == null) {
       if (isLoopje(activiteit)) zonderScore.push(dag);
     } else if (score > drempels.kniepijn_max) {
-      redenen.push(`kniepijn ${score} na ${activiteit.name || activiteit.type} op ${dag}`);
+      redenen.push(`kniepijn ${score} na ${activiteit.naam || activiteit.type} op ${dag}`);
     }
   }
   for (const dag of [...trainingsdagen].sort()) {
@@ -409,23 +385,23 @@ export function loopintensiteit(inOrde        , gelopen        , stapTerug      
 
                                                                                           
 
-/** `titel` is één korte regel voor het dashboard; `wat` en `advies` geven de volledige uitleg. */
+/** `titel` is één korte regel voor de pagina; `wat` en `advies` geven de volledige uitleg. */
 function waarschuwing(code        , titel        , wat        , advies        )               {
   return { code, titel, wat, advies };
 }
 
-export function pijnWaarschuwingen(activiteiten       , ochtendpijn             , veld        , drempels          ,
+export function pijnWaarschuwingen(activiteiten              , ochtendpijn             , drempels          ,
                                    vandaag       , dagen = 7, start               = null)                 {
   const waarschuwingen                 = [];
   const vanaf = plusDagen(vandaag, -dagen);
-  const teHoog = activiteiten.filter((a) => datumVan(a) >= vanaf && (a[veld] || 0) > drempels.kniepijn_max);
+  const teHoog = activiteiten.filter((a) => a.datum >= vanaf && (a.kniepijn || 0) > drempels.kniepijn_max);
   if (teHoog.length) {
     const laatste = teHoog[teHoog.length - 1];
     waarschuwingen.push(waarschuwing(
       "kniepijn",
-      `Kniepijn ${laatste[veld]}: niet lopen`,
-      `Je kniepijn was ${laatste[veld]} na ${laatste.name || laatste.type} op ` +
-        `${datumVan(laatste)}, boven de grens van ${drempels.kniepijn_max}.`,
+      `Kniepijn ${laatste.kniepijn}: niet lopen`,
+      `Je kniepijn was ${laatste.kniepijn} na ${laatste.naam || laatste.type} op ` +
+        `${laatste.datum}, boven de grens van ${drempels.kniepijn_max}.`,
       "Niet lopen tot de pijn weer op of onder 3 zit. Koel en ontzie de knie vandaag, doe alleen de " +
         "kine-oefeningen die pijnvrij gaan, en fiets hoogstens rustig en pijnvrij. Het lopen zet volgende " +
         "week een stap terug. Blijft de pijn boven 3 of wordt ze erger, contacteer dan je kine.",

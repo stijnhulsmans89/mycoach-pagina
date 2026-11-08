@@ -1,6 +1,9 @@
-// De weergave van de pagina: tekent alles uit D, de gegevens die `dashboardData` berekent.
+// De weergave van de pagina: tekent alles uit D, de gegevens die `paginaData` berekent (paginadata.ts).
 // Overgenomen van het vroegere claude.ai-dashboard, zodat versie 1 van de pagina er hetzelfde uitzag.
 // Gewoon JavaScript: de typecontrole slaat dit bestand over; de bouwstap kopieert het zoals het is.
+
+// naar de bron verwezen: de bouwstap maakt er ../datum.js van
+import { plusDagen } from "../datum.js";
 
 let naResize = null;
 addEventListener("resize", () => naResize?.());
@@ -14,8 +17,6 @@ export function toon(D) {
   const el = (tag, cls, tekst) => { const e = document.createElement(tag); if (cls) e.className = cls; if (tekst != null) e.textContent = tekst; return e; };
   const DAGEN = ["zondag", "maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag"];
   const datum = (s) => new Date(s + "T12:00:00");
-  const iso = (d) => { const z = new Date(d); z.setMinutes(z.getMinutes() - z.getTimezoneOffset()); return z.toISOString().slice(0, 10); };
-  const plusDagen = (s, n) => { const d = datum(s); d.setDate(d.getDate() + n); return iso(d); };
   const kort = (s) => datum(s).toLocaleDateString("nl-BE", { day: "numeric", month: "short" });
   const NS = "http://www.w3.org/2000/svg";
   const svgEl = (tag, attrs) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
@@ -575,5 +576,5 @@ export function toon(D) {
   let wacht, vorigeBreedte = innerWidth;
   naResize = () => { if (innerWidth === vorigeBreedte) return; vorigeBreedte = innerWidth; clearTimeout(wacht); wacht = setTimeout(() => kies(open), 150); };
 
-  return { kies, toonMeldingen, kort, iso, plusDagen, el, $ };
+  return { kies, toonMeldingen, kort, plusDagen, el, $ };
 }

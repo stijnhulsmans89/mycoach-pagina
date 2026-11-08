@@ -31,6 +31,21 @@ export function maandag(dag       )        {
   return plusDagen(dag, -weekdag(dag));
 }
 
+function twee(n        )         {
+  return String(n).padStart(2, "0");
+}
+
+/** De dag van een tijdstip, in de tijdzone van het toestel. */
+export function lokaleDatum(tijd      )        {
+  return `${tijd.getFullYear()}-${twee(tijd.getMonth() + 1)}-${twee(tijd.getDate())}`;
+}
+
+/** Een tijdstip in de tijdzone van het toestel: `2026-11-08T21:05:09`, of tot op de minuut. */
+export function lokaalTijdstip(tijd      , metSeconden = true)         {
+  const uur = `${twee(tijd.getHours())}:${twee(tijd.getMinutes())}`;
+  return `${lokaleDatum(tijd)}T${uur}${metSeconden ? `:${twee(tijd.getSeconds())}` : ""}`;
+}
+
 export function geldigeDatum(tekst        )          {
   return /^\d{4}-\d{2}-\d{2}$/.test(tekst) && uitMs(ms(tekst)) === tekst;
 }

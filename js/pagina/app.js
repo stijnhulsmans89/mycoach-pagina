@@ -3,9 +3,11 @@
 // ingeeft tot er weer verbinding is. De sleutel staat alleen in de browseropslag van de gsm en van één web-app op de Mac.
 
 import { AdapterFout,          } from "../bronnen.js";
-import { dashboardData } from "../dashboard.js";
-                                         
-import { BrowserAdapter, GeenVerbinding, INTERVALS, NotitieOpslag } from "./bronnen.js";
+import { paginaData } from "../paginadata.js";
+import { lokaalTijdstip, lokaleDatum,            } from "../datum.js";
+import { Intervals,             } from "../intervals.js";
+import { ftpFout, PIJN_MAX, PIJN_MIN } from "../invoer.js";
+import { browserTransport, GeenVerbinding, INTERVALS, NotitieOpslag } from "./bronnen.js";
 // @ts-expect-error: weergave.js is gewoon JavaScript, zonder types
 import { toon } from "./weergave.js";
 
@@ -25,8 +27,7 @@ const opslag = {
 const $ =                                      (id        ) => document.getElementById(id)     ;
 
 function vandaagLokaal()        {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return lokaleDatum(new Date());
 }
 
 /** Alleen op de eigen Mac (proefserver) praat de pagina met een nagebootste intervals.icu op hetzelfde adres. */
@@ -41,12 +42,11 @@ function apiBasis()         {
                                                       
                                                    
 
-                                                                              
 
-async function schrijf(adapter                , velden        , invoer        )                {
-  if (invoer.soort === "knie") await adapter.wijzigActiviteit(invoer.activiteit, { [velden.kniepijn]: invoer.waarde });
-  else if (invoer.soort === "ochtend") await adapter.wijzigWellness(invoer.datum, { [velden.ochtendpijn]: invoer.waarde });
-  else await adapter.wijzigWellness(invoer.datum, { [velden.garmin_ftp]: invoer.waarde });
+async function schrijf(intervals           , invoer        )                {
+  if (invoer.soort === "knie") await intervals.zetKniepijn(invoer.activiteit, invoer.waarde);
+  else if (invoer.soort === "ochtend") await intervals.zetOchtendpijn(invoer.datum, invoer.waarde);
+  else await intervals.zetGarminFtp(invoer.datum, invoer.waarde);
 }
 
 function wachtrij()           {
@@ -54,12 +54,12 @@ function wachtrij()           {
 }
 
 /** Wat offline ingegeven is, alsnog versturen. Geeft het aantal verstuurde items. */
-async function verstuurWachtrij(adapter                , velden        )                  {
+async function verstuurWachtrij(intervals           )                  {
   const rest           = [];
   let verstuurd = 0;
   for (const invoer of wachtrij()) {
     try {
-      await schrijf(adapter, velden, invoer);
+      await schrijf(intervals, invoer);
       verstuurd++;
     } catch (fout) {
       rest.push(invoer);
@@ -81,24 +81,30 @@ async function laad()                {
   if (!sleutel) return vraagSleutel();
   if (bezig) return;
   bezig = true;
-  const adapter = new BrowserAdapter(sleutel, apiBasis());
+  // de eigen velden: uit de laatste momentopname, tot de gegevensnotitie geladen is
+  let velden                = opslag.json                     (LAATSTE, null)?.velden ?? null;
+  const intervals = new Intervals(browserTransport(sleutel, apiBasis()), () => {
+    if (!velden) throw new AdapterFout("De gegevens van de coach zijn nog niet geladen.");
+    return velden;
+  });
   try {
-    const profielVelden = opslag.json                     (LAATSTE, null)?.velden;
-    if (profielVelden && wachtrij().length) await verstuurWachtrij(adapter, profielVelden);
+    if (velden && wachtrij().length) await verstuurWachtrij(intervals);
     const vandaag = vandaagLokaal();
-    const notities = await NotitieOpslag.laad(adapter, vandaag);
-    const D = await dashboardData(adapter, notities, vandaag);
-    const velden = (await notities.profiel()).velden          ;
-    if (wachtrij().length) await verstuurWachtrij(adapter, velden);
-    opslag.zet(LAATSTE, JSON.stringify({ D, velden }));
-    teken({ D, velden }, adapter, "");
+    const notities = await NotitieOpslag.laad(intervals, vandaag);
+    // de velden uit de gegevensnotitie: nodig om activiteiten en wellness te lezen
+    const geladen = (await notities.profiel()).velden          ;
+    velden = geladen;
+    const D = await paginaData(intervals, notities, vandaag, lokaalTijdstip(new Date(), false));
+    if (wachtrij().length) await verstuurWachtrij(intervals);
+    opslag.zet(LAATSTE, JSON.stringify({ D, velden: geladen }));
+    teken({ D, velden: geladen }, intervals, "");
   } catch (fout) {
     const laatste = opslag.json                     (LAATSTE, null);
     if (fout instanceof AdapterFout && !(fout instanceof GeenVerbinding) && /sleutel/.test(fout.message)) {
       vraagSleutel(fout.message);
     } else if (laatste) {
       const melding = fout instanceof GeenVerbinding ? "Geen verbinding" : (fout         ).message;
-      teken(laatste, adapter, `${melding}: dit is de laatste momentopname, van ${laatste.D.gemaakt_op.slice(11, 16)}` +
+      teken(laatste, intervals, `${melding}: dit is de laatste momentopname, van ${laatste.D.gemaakt_op.slice(11, 16)}` +
         (laatste.D.momentopname !== vandaagLokaal() ? ` op ${laatste.D.momentopname}` : "") + ".");
     } else {
       toonFout(fout instanceof GeenVerbinding ? "Geen verbinding met intervals.icu. Probeer het opnieuw zodra je verbinding hebt."
@@ -123,7 +129,7 @@ function vraagSleutel(fout = "")       {
   $                  ("sleutel-veld").focus();
 }
 
-function teken(m              , adapter                , verbinding        )       {
+function teken(m              , intervals           , verbinding        )       {
   $("laden").hidden = true;
   $("sleutel").hidden = true;
   $("inhoud").hidden = false;
@@ -132,7 +138,7 @@ function teken(m              , adapter                , verbinding        )    
   $("verbinding").textContent = [verbinding, open ? `${open} ingave${open > 1 ? "n" : ""} wacht${open > 1 ? "en" : ""} op verbinding.` : ""]
     .filter(Boolean).join(" ");
   $("verbinding").className = "bericht" + (verbinding ? " fout" : "");
-  bindInvoer(m, adapter, hulp);
+  bindInvoer(m, intervals, hulp);
   $("ververs").onclick = () => { $("verbinding").textContent = "Bezig met verversen…"; void laad(); };
   $("vergeet").onclick = () => {
     if (!confirm("De sleutel en de laatste momentopname op dit toestel wissen?")) return;
@@ -146,8 +152,8 @@ function teken(m              , adapter                , verbinding        )    
 const DAG = new Intl.DateTimeFormat("nl-BE", { weekday: "short", day: "numeric", month: "short" });
 const SOORTNAAM                         = { loopje: "Loopje", mtb: "MTB", rollen: "Rollen", kracht: "Kracht" };
 
-function bindInvoer(m              , adapter                , hulp     )       {
-  const { D, velden } = m;
+function bindInvoer(m              , intervals           , hulp     )       {
+  const { D } = m;
   const { kies, toonMeldingen, kort, el } = hulp;
   const vandaag = vandaagLokaal();
   $("pijninvoer").hidden = false;
@@ -167,7 +173,7 @@ function bindInvoer(m              , adapter                , hulp     )       {
   async function geefIn(invoer        , omschrijving        )                {
     bericht(invoer.soort, "Bezig…");
     try {
-      await schrijf(adapter, velden, invoer);
+      await schrijf(intervals, invoer);
       bericht(invoer.soort, `✓ ${omschrijving} staat in intervals.icu. De pagina rekent opnieuw…`, "ok");
       await laad();
       bericht(invoer.soort, `✓ ${omschrijving} staat in intervals.icu.`, "ok");
@@ -192,10 +198,8 @@ function bindInvoer(m              , adapter                , hulp     )       {
     optie.value = String(a.id);
     keuzeKnie.append(optie);
   }
-  // standaard: een loopje van gisteren of vandaag zonder score (de pijnregel draait om het lopen), anders de laatste training
-  const gisteren = new Date(Date.now() - 86_400_000);
-  const sinds = `${gisteren.getFullYear()}-${String(gisteren.getMonth() + 1).padStart(2, "0")}-${String(gisteren.getDate()).padStart(2, "0")}`;
-  const standaard = trainingen.find((a) => a.soort === "loopje" && a.kniepijn == null && a.datum >= sinds) ?? trainingen[0];
+  // de standaard kiest de pagina-data (een loopje van gisteren of vandaag zonder score, anders de laatste training)
+  const standaard = trainingen.find((a) => a.id === D.pijn.standaard_kniepijn) ?? trainingen[0];
   if (standaard) keuzeKnie.value = String(standaard.id);
   $("knie-veld").hidden = !trainingen.length;
 
@@ -224,7 +228,7 @@ function bindInvoer(m              , adapter                , hulp     )       {
   for (const soort of ["knie", "ochtend"]         ) {
     const scores = $(`${soort}-scores`);
     scores.replaceChildren();
-    for (let i = 0; i <= 10; i++) {
+    for (let i = PIJN_MIN; i <= PIJN_MAX; i++) {
       const k = el("button", i > D.pijn.grens ? "boven" : null, String(i));
       k.setAttribute("aria-pressed", "false");
       k.onclick = () => { keuze[soort] = i; bericht(soort, ""); vernieuw(soort); };
@@ -250,8 +254,9 @@ function bindInvoer(m              , adapter                , hulp     )       {
 
   $("ftp-bewaar").onclick = () => {
     const waarde = Number($                  ("ftp-waarde").value);
-    if (!Number.isInteger(waarde) || waarde < 50 || waarde > 600) {
-      bericht("ftp", "Een FTP is een getal tussen 50 en 600 W.", "fout");
+    const fout = ftpFout(waarde);
+    if (fout) {
+      bericht("ftp", fout, "fout");
       $("ftp-waarde").focus();
       return;
     }
@@ -259,17 +264,15 @@ function bindInvoer(m              , adapter                , hulp     )       {
     void geefIn({ soort: "ftp", datum, waarde }, `Garmin-FTP ${waarde} W op ${kort(datum)}`);
   };
 
-  // Herinnering bovenaan: kniepijn na een loopje van gisteren of vandaag, en de ochtendpijn van vandaag
-  const items                                                    = [];
-  for (const l of D.pijn.loopjes_zonder_kniepijn ?? []) {
-    const a = trainingen.find((t) => t.datum === l.datum && t.naam === l.training && t.kniepijn == null);
-    if (!a) continue;
-    const wanneer = l.datum === vandaag ? "vandaag" : "gisteren";
-    items.push({ tekst: `Knie na loopje ${wanneer}`, ga: () => { keuzeKnie.value = String(a.id); return "knie"; } });
-  }
-  if (!D.pijn.ochtendpijn.some((p     ) => p.datum === vandaag)) {
-    items.push({ tekst: "Ochtendpijn", ga: () => { $                  ("ochtend-datum").value = vandaag; return "ochtend"; } });
-  }
+  // Herinnering bovenaan: wat de pagina-data nog in te geven vindt; de pagina koppelt er alleen de knop aan
+  const items = ((D.herinneringen ?? [])         ).map((h) => ({
+    tekst: h.tekst          ,
+    ga: ()                     => {
+      if (h.soort === "knie") { keuzeKnie.value = String(h.activiteit); return "knie"; }
+      $                  ("ochtend-datum").value = h.datum;
+      return "ochtend";
+    },
+  }));
   const doel = $("herinnering");
   doel.replaceChildren();
   if (items.length) {

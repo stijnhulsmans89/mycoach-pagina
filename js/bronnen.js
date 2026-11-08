@@ -1,26 +1,11 @@
-// De twee bronnen van de regels: intervals.icu (via een adapter) en de bestanden van de coach (via de opslag).
-// De regels kennen alleen deze interfaces, zodat dezelfde code draait in Node en later in de browser.
+// De opslag van de coach (bestanden op de Mac, notities op de pagina) en de gedeelde types.
+// intervals.icu zelf zit in `intervals.ts`. Dezelfde code draait in Node en in de browser.
 
                                         
 
 /** Een ruw record van intervals.icu (activiteit, wellness, event, atleet), met de velden zoals de API ze geeft. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                                       
-
-                          
-                         
-                                                               
-                                                           
-                                                         
- 
-
-/** Een adapter die ook in intervals.icu schrijft: pijnscores, wellness en events in de kalender. */
-                                                 
-                                                                   
-                                                          
-                                      
-                                                     
- 
 
 export class AdapterFout extends Error {}
 
@@ -73,10 +58,18 @@ export class AdapterFout extends Error {}
                              
  
 
-/** De bestanden van de coach, ook om te schrijven (alleen in Claude Code op de Mac). */
+/**
+ * De bestanden van de coach, ook om te schrijven (alleen in Claude Code op de Mac). Elke schrijfactie zegt
+ * wat ze bewaart; welke bestanden dat zijn, weet alleen de opslag zelf.
+ */
                                                
-                                                            
-                                                                  
-                                                                 
-                                  
+                                                                                                          
+                                                               
+                                                                                     
+                                                 
+                                               
+                                                             
+                                                 
+                                                                                                                
+                                                         
  
