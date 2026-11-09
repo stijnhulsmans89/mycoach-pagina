@@ -346,8 +346,8 @@ export function toon(D) {
   if (ftp.eftp_uitleg) { $("ftp-eftp").textContent = ftp.eftp_uitleg; $("ftp-eftp").hidden = false; }
 
 
-  $("knie-uitleg").textContent = D.pijn.kniepijn_uitleg;
-  $("ochtend-uitleg").textContent = D.pijn.ochtendtest;
+  $("knie-uitleg").replaceChildren(el("b", null, "Kniepijn. "), D.pijn.kniepijn_uitleg);
+  $("ochtend-uitleg").replaceChildren(el("b", null, "Ochtendpijn. "), D.pijn.ochtendtest);
   $("schaal-uitleg").textContent = D.pijn.uitleg;
   for (const s of D.pijn.schaal) { const r = el("div"); r.append(el("b", null, s.score), el("span", null, s.uitleg)); $("schaal").append(r); }
 

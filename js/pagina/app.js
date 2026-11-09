@@ -152,105 +152,150 @@ function teken(m              , intervals           , verbinding        )       
 const DAG = new Intl.DateTimeFormat("nl-BE", { weekday: "short", day: "numeric", month: "short" });
 const SOORTNAAM                         = { loopje: "Loopje", mtb: "MTB", rollen: "Rollen", kracht: "Kracht" };
 
+                                    
+
+// Wat je in het pijnblok koos. Dit blijft staan als de pagina na het bewaren opnieuw tekent.
+const pijnStand                                                                                                                =
+  { soort: null, open: false, waarKiezen: false, training: null, datum: null };
+
 function bindInvoer(m              , intervals           , hulp     )       {
   const { D } = m;
   const { kies, toonMeldingen, kort, el } = hulp;
   const vandaag = vandaagLokaal();
   $("pijninvoer").hidden = false;
   $("ftp-invoer").hidden = false;
-  for (const id of ["ochtend-datum", "ftp-datum"]) {
-    const veld = $                  (id);
-    veld.value = vandaag;
-    veld.max = vandaag;
-  }
+  const ftpDatum = $                  ("ftp-datum");
+  ftpDatum.value = vandaag;
+  ftpDatum.max = vandaag;
+  const ochtendDatum = $                  ("ochtend-datum");
+  ochtendDatum.max = vandaag;
+  ochtendDatum.value = pijnStand.datum ?? vandaag;
 
-  const bericht = (soort        , tekst        , cls = "") => {
-    const b = $(`${soort}-bericht`);
-    b.textContent = tekst;
+                                                          
+  const bericht = (soort                 , tekst        , cls = "", herstel          ) => {
+    const b = $(soort === "ftp" ? "ftp-bericht" : "pijn-bericht");
+    b.replaceChildren(tekst);
     b.className = "bericht" + (cls ? ` ${cls}` : "");
+    if (!herstel) return;
+    const knop = el("button", "link", "ongedaan maken");
+    knop.onclick = () => void geefIn(herstel.invoer, herstel.omschrijving);
+    b.append(knop);
   };
 
-  async function geefIn(invoer        , omschrijving        )                {
+  async function geefIn(invoer        , omschrijving        , herstel          )                {
     bericht(invoer.soort, "Bezig…");
     try {
       await schrijf(intervals, invoer);
-      bericht(invoer.soort, `✓ ${omschrijving} staat in intervals.icu. De pagina rekent opnieuw…`, "ok");
+      bericht(invoer.soort, `✓ ${omschrijving} bewaard. De pagina rekent opnieuw…`, "ok");
       await laad();
-      bericht(invoer.soort, `✓ ${omschrijving} staat in intervals.icu.`, "ok");
+      bericht(invoer.soort, `✓ ${omschrijving} bewaard.`, "ok", herstel);
     } catch (fout) {
       if (fout instanceof GeenVerbinding) {
         opslag.zet(WACHTRIJ, JSON.stringify([...wachtrij(), invoer]));
-        bericht(invoer.soort, `Geen verbinding: ${omschrijving} is bewaard op dit toestel en gaat naar intervals.icu zodra er verbinding is.`, "ok");
+        bericht(invoer.soort, `Geen verbinding: ${omschrijving} wacht op dit toestel tot er verbinding is.`, "ok", herstel);
       } else {
         bericht(invoer.soort, `Dat lukte niet: ${(fout         ).message}`, "fout");
       }
     }
   }
 
-  // Kniepijn: bij een training van de laatste week, standaard het laatste loopje zonder score
+  // --- Het pijnblok: één schakelaar Knie | Ochtend, de training of dag als tekst, één tik op een score bewaart ---
+
   const trainingen        = D.activiteiten_recent ?? [];
+  // een kort label van de pagina zelf: een naam uit Garmin kan eindeloos lang zijn
+  const label = (a     ) => `${DAG.format(new Date(`${a.datum}T12:00:00`))} · ${SOORTNAAM[a.soort] ?? a.type} · ${a.minuten} min`;
   const keuzeKnie = $                   ("knie-training");
   keuzeKnie.replaceChildren();
   for (const a of trainingen) {
-    // een kort label van de pagina zelf: een naam uit Garmin kan eindeloos lang zijn
-    const optie = el("option", null, `${DAG.format(new Date(`${a.datum}T12:00:00`))} · ${SOORTNAAM[a.soort] ?? a.type} · ${a.minuten} min` +
-      (a.kniepijn != null ? ` · nu ${a.kniepijn}` : ""));
+    const optie = el("option", null, label(a) + (a.kniepijn != null ? ` · nu ${a.kniepijn}` : ""));
     optie.value = String(a.id);
     keuzeKnie.append(optie);
   }
   // de standaard kiest de pagina-data (een loopje van gisteren of vandaag zonder score, anders de laatste training)
-  const standaard = trainingen.find((a) => a.id === D.pijn.standaard_kniepijn) ?? trainingen[0];
+  const standaard = trainingen.find((a) => String(a.id) === pijnStand.training)
+    ?? trainingen.find((a) => a.id === D.pijn.standaard_kniepijn) ?? trainingen[0];
   if (standaard) keuzeKnie.value = String(standaard.id);
-  $("knie-veld").hidden = !trainingen.length;
 
-  const keuze                                            = { knie: null, ochtend: null };
-  const huidigeWaarde = (soort                    )                => {
-    if (soort === "knie") return trainingen.find((a) => String(a.id) === keuzeKnie.value)?.kniepijn ?? null;
-    const datum = $                  ("ochtend-datum").value || vandaag;
-    return D.pijn.ochtendpijn.find((p     ) => p.datum === datum)?.score ?? null;
+  const training = () => trainingen.find((a) => String(a.id) === keuzeKnie.value);
+  const ochtendOp = (datum       )                => D.pijn.ochtendpijn.find((p     ) => p.datum === datum)?.score ?? null;
+  const huidig = (soort           )                =>
+    soort === "knie" ? training()?.kniepijn ?? null : ochtendOp(ochtendDatum.value || vandaag);
+
+  // wat nog in te geven is (de herinneringen); 's ochtends eerst de ochtendpijn
+  const ontbreekt = new Set(((D.herinneringen ?? [])         ).map((h) => h.soort             ));
+  const soortNu = ()            => {
+    if (!trainingen.length) return "ochtend";
+    if (pijnStand.soort) return pijnStand.soort;
+    if (ontbreekt.has("ochtend") && (!ontbreekt.has("knie") || new Date().getHours() < 12)) return "ochtend";
+    return "knie";
   };
 
-  function vernieuw(soort                    )       {
-    const huidig = huidigeWaarde(soort);
-    const gekozen = keuze[soort] ?? huidig;
-    for (const b of $(`${soort}-scores`).children) b.setAttribute("aria-pressed", String(Number(b.textContent) === gekozen));
-    const knop = $                   (`${soort}-bevestig`);
-    const naam = soort === "knie" ? "kniepijn" : "ochtendpijn";
-    if (keuze[soort] == null || keuze[soort] === huidig) {
-      knop.disabled = true;
-      knop.textContent = huidig == null ? "Kies eerst een score" : `Staat op ${huidig}: kies een andere score om te wijzigen`;
-    } else {
-      knop.disabled = false;
-      knop.textContent = huidig == null ? `Bewaar ${naam} ${keuze[soort]}` : `Wijzig ${naam} van ${huidig} naar ${keuze[soort]}`;
-    }
+  // alles ingegeven en nog niets aangeraakt: één regel
+  const ingeklapt = !ontbreekt.size && !pijnStand.open && !pijnStand.soort;
+  $("pijn-klaar").hidden = !ingeklapt;
+  $("pijn-blok").hidden = ingeklapt;
+  if (ingeklapt) {
+    const laatsteKnie = trainingen.find((a) => a.kniepijn != null);
+    $("pijn-klaar-tekst").textContent = `Ingegeven: ochtend ${ochtendOp(vandaag) ?? "–"}` +
+      (laatsteKnie ? ` · knie ${laatsteKnie.kniepijn} (${DAG.format(new Date(`${laatsteKnie.datum}T12:00:00`))})` : "");
   }
+  $("pijn-open").onclick = () => { pijnStand.open = true; $("pijn-klaar").hidden = true; $("pijn-blok").hidden = false; toonPijn(); };
 
-  for (const soort of ["knie", "ochtend"]         ) {
-    const scores = $(`${soort}-scores`);
-    scores.replaceChildren();
-    for (let i = PIJN_MIN; i <= PIJN_MAX; i++) {
-      const k = el("button", i > D.pijn.grens ? "boven" : null, String(i));
-      k.setAttribute("aria-pressed", "false");
-      k.onclick = () => { keuze[soort] = i; bericht(soort, ""); vernieuw(soort); };
-      scores.append(k);
-    }
-    $(`${soort}-bevestig`).onclick = async () => {
-      const waarde = keuze[soort];
-      if (waarde == null) return;
-      keuze[soort] = null;
+  const scores = $("pijn-scores");
+  scores.replaceChildren();
+  for (let i = PIJN_MIN; i <= PIJN_MAX; i++) {
+    const k = el("button", i > D.pijn.grens ? "boven" : null, String(i));
+    k.onclick = () => {
+      const soort = soortNu();
+      const vorige = huidig(soort);
+      if (i === vorige) return;
+      pijnStand.soort = soort;
+      for (const b of scores.children) b.setAttribute("aria-pressed", String(b === k));
       if (soort === "knie") {
-        const a = trainingen.find((t) => String(t.id) === keuzeKnie.value);
+        const a = training();
         if (!a) return;
-        await geefIn({ soort, activiteit: a.id, naam: a.naam, datum: a.datum, waarde }, `Kniepijn ${waarde} na ${a.naam || a.type} (${kort(a.datum)})`);
+        pijnStand.training = String(a.id);
+        const invoer = (waarde        )         => ({ soort, activiteit: a.id, naam: a.naam, datum: a.datum, waarde });
+        void geefIn(invoer(i), `Kniepijn ${i} (${kort(a.datum)})`,
+          vorige == null ? undefined : { invoer: invoer(vorige), omschrijving: `Kniepijn terug op ${vorige}` });
       } else {
-        const datum = $                  ("ochtend-datum").value || vandaag;
-        await geefIn({ soort, datum, waarde }, `Ochtendpijn ${waarde} op ${kort(datum)}`);
+        const datum = ochtendDatum.value || vandaag;
+        pijnStand.datum = datum;
+        void geefIn({ soort, datum, waarde: i }, `Ochtendpijn ${i} (${kort(datum)})`,
+          vorige == null ? undefined : { invoer: { soort, datum, waarde: vorige }, omschrijving: `Ochtendpijn terug op ${vorige}` });
       }
     };
-    vernieuw(soort);
+    scores.append(k);
   }
-  keuzeKnie.onchange = () => { keuze.knie = null; bericht("knie", ""); vernieuw("knie"); };
-  $("ochtend-datum").onchange = () => { keuze.ochtend = null; bericht("ochtend", ""); vernieuw("ochtend"); };
+
+  function toonPijn()       {
+    const soort = soortNu();
+    const knopKnie = $("soort-knie"), knopOchtend = $("soort-ochtend");
+    knopKnie.hidden = !trainingen.length;
+    knopKnie.textContent = `Knie · ${huidig("knie") ?? "–"}`;
+    knopOchtend.textContent = `Ochtend · ${huidig("ochtend") ?? "–"}`;
+    knopKnie.setAttribute("aria-pressed", String(soort === "knie"));
+    knopOchtend.setAttribute("aria-pressed", String(soort === "ochtend"));
+    const datum = ochtendDatum.value || vandaag;
+    const a = training();
+    $("pijn-waar").textContent = soort === "knie"
+      ? (a ? `na ${label(a)}` : "")
+      : `ochtend van ${datum === vandaag ? "vandaag" : DAG.format(new Date(`${datum}T12:00:00`))}`;
+    $("knie-keuze").hidden = !(pijnStand.waarKiezen && soort === "knie");
+    $("ochtend-keuze").hidden = !(pijnStand.waarKiezen && soort === "ochtend");
+    $("pijn-wijzig").setAttribute("aria-expanded", String(pijnStand.waarKiezen));
+    scores.setAttribute("aria-label", `${soort === "knie" ? "Kniepijn" : "Ochtendpijn"} van 0 tot 10`);
+    const nu = huidig(soort);
+    for (const b of scores.children) b.setAttribute("aria-pressed", String(Number(b.textContent) === nu));
+  }
+
+  const kiesSoort = (soort           ) => { pijnStand.soort = soort; toonPijn(); };
+  $("soort-knie").onclick = () => kiesSoort("knie");
+  $("soort-ochtend").onclick = () => kiesSoort("ochtend");
+  $("pijn-wijzig").onclick = () => { pijnStand.waarKiezen = !pijnStand.waarKiezen; toonPijn(); };
+  keuzeKnie.onchange = () => { pijnStand.training = keuzeKnie.value; toonPijn(); };
+  ochtendDatum.onchange = () => { pijnStand.datum = ochtendDatum.value || null; toonPijn(); };
+  toonPijn();
 
   $("ftp-bewaar").onclick = () => {
     const waarde = Number($                  ("ftp-waarde").value);
@@ -264,28 +309,26 @@ function bindInvoer(m              , intervals           , hulp     )       {
     void geefIn({ soort: "ftp", datum, waarde }, `Garmin-FTP ${waarde} W op ${kort(datum)}`);
   };
 
-  // Herinnering bovenaan: wat de pagina-data nog in te geven vindt; de pagina koppelt er alleen de knop aan
-  const items = ((D.herinneringen ?? [])         ).map((h) => ({
-    tekst: h.tekst          ,
-    ga: ()                     => {
-      if (h.soort === "knie") { keuzeKnie.value = String(h.activiteit); return "knie"; }
-      $                  ("ochtend-datum").value = h.datum;
-      return "ochtend";
-    },
-  }));
+  // Herinnering bovenaan: wat de pagina-data nog in te geven vindt; de knop opent het pijnblok op de juiste plaats
   const doel = $("herinnering");
   doel.replaceChildren();
+  const items = (D.herinneringen ?? [])         ;
   if (items.length) {
     const kaart = el("div", "herinnering");
     kaart.append(el("span", null, "Nog ingeven:"));
-    for (const item of items) {
-      const knop = el("button", null, item.tekst);
+    for (const h of items) {
+      const knop = el("button", null, h.tekst);
       knop.onclick = () => {
         kies("pijn");
-        const soort = item.ga();
-        keuze[soort] = null; bericht(soort, ""); vernieuw(soort);
-        $(`${soort}-veld`).scrollIntoView({ behavior: "smooth", block: "start" });
-        ($(`${soort}-scores`).firstElementChild                      )?.focus({ preventScroll: true });
+        pijnStand.soort = h.soort;
+        pijnStand.open = true;
+        if (h.soort === "knie") { keuzeKnie.value = String(h.activiteit); pijnStand.training = keuzeKnie.value; }
+        else { ochtendDatum.value = h.datum; pijnStand.datum = h.datum; }
+        $("pijn-klaar").hidden = true;
+        $("pijn-blok").hidden = false;
+        toonPijn();
+        $("pijninvoer").scrollIntoView({ behavior: "smooth", block: "start" });
+        (scores.firstElementChild                      )?.focus({ preventScroll: true });
       };
       kaart.append(knop);
     }
