@@ -151,6 +151,9 @@ details p { margin-top: 4px; }
 .oordeel[data-stand="in orde"] { border-left-color: var(--ok); } .oordeel[data-stand="in orde"] b { color: var(--ok); }
 .oordeel[data-stand="let op"] { border-left-color: var(--warn); } .oordeel[data-stand="let op"] b { color: var(--warn); }
 .oordeel[data-stand="overbelast"] { border-left-color: var(--bad); } .oordeel[data-stand="overbelast"] b { color: var(--bad); }
+.oordeel[data-stand="op schema"] { border-left-color: var(--ok); } .oordeel[data-stand="op schema"] b { color: var(--ok); }
+.oordeel[data-stand="achter"] { border-left-color: var(--warn); } .oordeel[data-stand="achter"] b { color: var(--warn); }
+.oordeel[data-stand="pas op"] { border-left-color: var(--bad); } .oordeel[data-stand="pas op"] b { color: var(--bad); }
 .oordeel ul { margin: 0; padding-left: 18px; }
 .vormzones { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
 .uitleg { background: var(--panel); border: 0; border-radius: 14px; padding: 10px 14px; }
@@ -162,21 +165,27 @@ details p { margin-top: 4px; }
 .tijdlijn::before { content: ""; position: absolute; left: 7px; top: 6px; bottom: 6px; width: 2px; background: var(--line); }
 .tijdlijn li { position: relative; display: grid; gap: 2px; }
 .tijdlijn li::before { content: ""; position: absolute; left: -20px; top: 6px; width: 12px; height: 12px; border-radius: 50%; background: var(--panel); border: 2px solid var(--muted); }
-.tijdlijn .fase { background: var(--panel); border: 1px solid var(--panel); border-radius: 14px; padding: 10px 12px; }
-.tijdlijn .fase::before { top: 14px; }
-.tijdlijn .fase.huidig { border-color: var(--accent); }
+/* De weg naar je wedstrijd: elke fase is één regel; de huidige in de accentkleur, wat voorbij is gedimd */
+.weg-regel { margin: -4px 0 0; }
+.fase-nu { display: grid; gap: 4px; }
+.fase-nu h3 { margin: 0; }
+.tijdlijn .fase.huidig strong { color: var(--accent); }
 .tijdlijn .fase.huidig::before { background: var(--accent); border-color: var(--accent); }
-.tijdlijn .fase.voorbij { opacity: .6; }
-.tijdlijn .fase details > summary { color: var(--ink); min-height: 0; display: grid; gap: 0; list-style: none; }
+.tijdlijn .voorbij { opacity: .6; }
+.tijdlijn .fase details > summary { color: var(--ink); min-height: 44px; display: flex; align-items: center; margin: -10px 0; list-style: none; }
 .tijdlijn .fase details > summary::-webkit-details-marker { display: none; }
-.tijdlijn .fase details[open] > summary { margin-bottom: 4px; }
+.tijdlijn .fase details > summary .fase-kop::after { content: "doel"; font-size: .8rem; color: var(--accent); }
+.tijdlijn .fase details[open] > summary .fase-kop::after { content: "verberg"; }
+.weg-details > summary { font-weight: 600; }
+.weg-details-inhoud { display: grid; gap: 10px; }
+.weg-details-inhoud h3 { margin: 8px 0 0; }
 .tijdlijn .wedstrijd::before { border-radius: 2px; transform: rotate(45deg); border-color: var(--tweede); background: var(--tweede); }
 .tijdlijn .wedstrijd.A::before { border-color: var(--bad); background: var(--bad); }
 .tijdlijn .checkpoint::before { border-color: var(--accent); }
 .tijdlijn .checkpoint.klaar::before { background: var(--ok); border-color: var(--ok); }
 .tijdlijn .nu { color: var(--bad); font-weight: 600; font-size: .9rem; }
 .tijdlijn .nu::before { border-color: var(--bad); background: var(--bad); width: 10px; height: 10px; left: -19px; top: 7px; }
-.fase-kop { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 10px; align-items: baseline; }
+.fase-kop { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; }
 .leeg { background: var(--panel); border: 1px dashed var(--line); border-radius: 8px; padding: 16px; color: var(--muted); }
 button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 button { font: 600 1rem var(--body); background: var(--accent); color: var(--panel); border: 0; border-radius: 8px; padding: 8px 16px; min-height: 44px; cursor: pointer; }

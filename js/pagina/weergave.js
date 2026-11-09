@@ -520,40 +520,55 @@ export function toon(D) {
     for (const s of gezien.values()) item(s.kleur, s.label, true);
   }
 
-  // De weg naar de wedstrijd: aftelling, verticale tijdlijn, loopvolume en fitheid
+  // De weg naar de wedstrijd, less is more: het oordeel, de huidige fase en de tijdlijn; de grafieken in Details
   let tekenVolume = () => {}, tekenFiets = () => {}, tekenFitheid = () => {};
   function bouwProgressie() {
     const doel = $("progressie"), p = D.progressie;
-    if (p.leeg) { doel.replaceChildren(el("div", "leeg", p.melding)); return; }
-    const sp = p.seizoensplan, a = p.aftelling;
-    $("weg-titel").textContent = `De weg naar ${sp.doel.naam} · ${sp.doel.sport === "mtb" ? "MTB · " : ""}${sp.doel.afstand_km ?? "?"} km · ${datum(sp.doel.datum).toLocaleDateString("nl-BE", { day: "numeric", month: "short", year: "numeric" })}`;
-    const cijfers = el("div", "cijfers");
-    for (const [naam, waarde] of [["Week", `${Math.max(a.week, 0)} van ${a.weken}`], ["Nog", `${a.dagen} dagen`], ["Fase", p.huidige_fase ? p.huidige_fase.naam : "—"], ["Fitheid", `${p.fitheid.huidig ?? "—"} → ${p.fitheid.streef ?? "—"}`]]) {
-      const c = el("div", "cijfer"); c.append(el("span", "label", naam), el("b", null, waarde)); cijfers.append(c);
-    }
-    doel.append(cijfers);
+    doel.replaceChildren();
+    if (p.leeg) { doel.append(el("div", "leeg", p.melding)); return; }
+    const sp = p.seizoensplan, a = p.aftelling, hf = p.huidige_fase;
+    const wedstrijddag = sp.doel.datum, getal = (x) => x == null ? "?" : String(x).replace(".", ",");
+    $("weg-titel").textContent = sp.doel.naam;
+    const faseWeek = hf ? `fase ${hf.naam}, week ${Math.floor((datum(VANDAAG) - datum(hf.van)) / 864e5 / 7) + 1} van ${hf.weken}` : null;
+    doel.append(el("p", "klein weg-regel", [sp.doel.sport === "mtb" ? "MTB" : "lopen", `${getal(sp.doel.afstand_km)} km`,
+      datum(wedstrijddag).toLocaleDateString("nl-BE", { weekday: "short", day: "numeric", month: "short", year: "numeric" }),
+      `nog ${Math.max(a.dagen, 0)} dagen`, faseWeek].filter(Boolean).join(" · ")));
 
+    // Het oordeel: hetzelfde als bovenaan de pagina (D.indicator), hier met het waarom erbij
+    const oordeel = el("div", "oordeel"); oordeel.setAttribute("role", "status"); oordeel.dataset.stand = D.indicator.stand;
+    oordeel.append(el("b", null, D.indicator.stand), el("p", null, D.indicator.uitleg));
+    doel.append(oordeel);
+    if (hf) {
+      const fase = el("div", "fase-nu");
+      fase.append(el("h3", null, `Deze fase: ${hf.naam}`), el("p", null, hf.doel),
+        el("p", "klein", `Richtvolume: ~${hf.richtvolume_min} min lopen` +
+          (hf.richtvolume_fiets_uur != null ? ` en ~${getal(hf.richtvolume_fiets_uur)} u fietsen` : "") + " per week."));
+      doel.append(fase);
+    }
+
+    // De tijdlijn: elke fase één regel; voorbije fases, wedstrijden en checkpoints gedimd; alles tot de A-wedstrijd
     const items = [];
     for (const f of sp.fases) items.push({ datum: f.van, volgorde: 1, maak: () => {
-      // Alleen de huidige fase toont haar doel; de andere fases zijn één regel die openklapt
-      const huidig = p.huidige_fase && p.huidige_fase.naam === f.naam;
-      const li = el("li", "fase" + (huidig ? " huidig" : f.tot < VANDAAG ? " voorbij" : ""));
-      const kop = el("div", "fase-kop"); kop.append(el("h3", null, f.naam), el("span", "klein", `${kort(f.van)} – ${kort(f.tot)}`));
-      const regel = el("span", "klein", `${f.weken} weken · ~${f.richtvolume_min} min lopen` +
-        (f.richtvolume_fiets_uur != null ? ` en ~${f.richtvolume_fiets_uur} u fietsen` : "") + " per week");
-      if (huidig) { li.append(kop, regel, el("p", null, f.doel)); return li; }
+      const huidig = hf && hf.naam === f.naam, voorbij = !huidig && f.tot < VANDAAG;
+      const li = el("li", "fase" + (huidig ? " huidig" : voorbij ? " voorbij" : ""));
+      const kop = el("div", "fase-kop"); kop.append(el("strong", null, f.naam), el("span", "klein", `${kort(f.van)} – ${kort(f.tot)}`));
+      if (!voorbij) { li.append(kop); return li; }
+      // een voorbije fase klapt open naar haar doel
       const uitklap = el("details"), samenvatting = el("summary");
-      samenvatting.append(kop, regel); uitklap.append(samenvatting, el("p", null, f.doel)); li.append(uitklap);
+      samenvatting.append(kop); uitklap.append(samenvatting, el("p", "klein", f.doel)); li.append(uitklap);
       return li;
     } });
-    for (const w of sp.wedstrijden || []) items.push({ datum: w.datum, volgorde: 2, maak: () => {
-      const li = el("li", "wedstrijd " + w.prioriteit);
-      li.append(el("strong", null, `${kort(w.datum)} · ${w.naam} (${w.sport === "mtb" ? "MTB, " : ""}${w.prioriteit}, ${w.afstand_km ?? "?"} km)`), el("span", "klein", w.rol));
+    for (const w of (sp.wedstrijden || []).filter((w) => w.datum <= wedstrijddag)) items.push({ datum: w.datum, volgorde: 2, maak: () => {
+      const voorbij = w.datum < VANDAAG, isDoel = w.datum === wedstrijddag;
+      const li = el("li", "wedstrijd " + w.prioriteit + (voorbij ? " voorbij" : ""));
+      li.append(el("strong", null, `${kort(w.datum)} · ${w.naam}`));
+      if (!isDoel && !voorbij) li.append(el("span", "klein", `${w.sport === "mtb" ? "MTB" : "lopen"} · ${getal(w.afstand_km)} km · ${w.prioriteit}-wedstrijd` + (w.rol ? `: ${w.rol}` : "")));
       return li;
     } });
-    for (const c of p.checkpoints || []) items.push({ datum: c.datum, volgorde: 2, maak: () => {
+    for (const c of (p.checkpoints || []).filter((c) => c.wedstrijd <= wedstrijddag)) items.push({ datum: c.datum, volgorde: 2, maak: () => {
       const li = el("li", "checkpoint" + (c.afgevinkt ? " klaar" : ""));
-      li.append(el("strong", null, `${kort(c.datum)} · kine-checkpoint`), el("span", "klein", c.afgevinkt ? "Afgevinkt." : `Bespreek met je kine of de wedstrijd van ${kort(c.wedstrijd)} haalbaar is.`));
+      li.append(el("strong", null, `${kort(c.datum)} · ${c.afgevinkt ? "✓ " : ""}kine-checkpoint`));
+      if (!c.afgevinkt) li.append(el("span", "klein", `Bespreek met je kine of de wedstrijd van ${kort(c.wedstrijd)} haalbaar is.`));
       return li;
     } });
     items.push({ datum: VANDAAG, volgorde: 0, maak: () => el("li", "nu", "Je bent hier · " + kort(VANDAAG)) });
@@ -562,12 +577,19 @@ export function toon(D) {
     for (const i of items) lijn.append(i.maak());
     doel.append(lijn);
 
+    // Details: de drie grafieken, dicht bij het openen van de pagina; ze worden getekend als Details openklapt
+    const details = el("details", "weg-details"), binnen = el("div", "weg-details-inhoud");
+    details.append(el("summary", null, "Details"), binnen);
+    doel.append(details);
+    details.addEventListener("toggle", () => { if (details.open) { tekenVolume(); tekenFiets(); tekenFitheid(); } });
+
     const vol = el("div", "grafiek");
-    doel.append(el("h3", null, "Loopvolume per week"), vol,
+    binnen.append(el("h3", null, "Loopvolume per week"), vol,
       Object.assign(el("div", "legenda"), { innerHTML: '<span><i style="background:var(--muted)"></i>Richtvolume van de fase</span><span><i style="background:var(--accent-soft);height:8px;border:1px solid var(--accent)"></i>Gepland</span><span><i style="background:var(--accent);height:8px"></i>Gelopen</span>' }));
     const weken = p.loopvolume;
     const hier = weken.findIndex((w) => w.week <= VANDAAG && VANDAAG < plusDagen(w.week, 7));
     tekenVolume = () => {
+      if (!details.open) return; // dicht: geen breedte om te tekenen
       const vmax = Math.ceil(Math.max(30, ...weken.map((w) => Math.max(w.gepland || 0, w.werkelijk || 0, w.richtvolume || 0))) / 30) * 30;
       grafiek(vol, {
         band: true, dagen: weken.map((w) => w.week), min: 0, max: vmax, ticks: [0, vmax / 2, vmax], label: "Richtvolume, gepland en gelopen loopvolume per week tot de wedstrijd",
@@ -588,9 +610,10 @@ export function toon(D) {
 
     // Fietstijd per week, in uren: de tweede doelsport naast het loopvolume
     const fiets = el("div", "grafiek");
-    doel.append(el("h3", null, "Fietstijd per week"), fiets,
+    binnen.append(el("h3", null, "Fietstijd per week"), fiets,
       Object.assign(el("div", "legenda"), { innerHTML: '<span><i style="background:var(--muted)"></i>Richtvolume van de fase</span><span><i style="background:var(--tweede);height:8px"></i>Gefietst (MTB en rollen)</span>' }));
     tekenFiets = () => {
+      if (!details.open) return;
       const uur = (m) => m == null ? null : Math.round(m / 6) / 10;
       const fmax = Math.ceil(Math.max(2, ...weken.map((w) => Math.max(uur(w.fietstijd) || 0, w.richtvolume_fiets_uur || 0))) / 2) * 2;
       grafiek(fiets, {
@@ -607,15 +630,13 @@ export function toon(D) {
       });
     };
 
-    const fit = el("div", "grafiek"), fitUitklap = el("details");
-    fitUitklap.append(el("summary", null, "Fitheid richting de wedstrijddag"), fit,
+    const fit = el("div", "grafiek");
+    binnen.append(el("h3", null, "Fitheid richting de wedstrijddag"), fit,
       Object.assign(el("div", "legenda"), { innerHTML: '<span><i style="background:var(--accent)"></i>Je fitheid</span><span><i style="background:var(--muted)"></i>Lijn naar je streefwaarde</span>' }),
       el("p", "klein", "De lijn loopt van je fitheid bij de start van het seizoensplan naar de streefwaarde op de wedstrijddag. Ligt je fitheid er ver onder, dan staat de stand op \"achter\". Het is een richtwaarde: de pijnregel gaat altijd voor."));
-    doel.append(fitUitklap);
-    fitUitklap.addEventListener("toggle", () => { if (fitUitklap.open) tekenFitheid(); });
     const f = p.fitheid;
     tekenFitheid = () => {
-      if (!fitUitklap.open) return; // dicht: geen breedte om te tekenen; de grafiek komt bij het openklappen
+      if (!details.open) return;
       if (f.streef == null || f.start.waarde == null) { fit.replaceChildren(el("p", "klein", "Nog geen streefwaarde voor je fitheid.")); return; }
       const geschiedenis = D.belasting.filter((r) => r.fitheid != null);
       const eerste = [geschiedenis.length ? geschiedenis[0].datum : f.start.datum, f.start.datum].sort()[0];
