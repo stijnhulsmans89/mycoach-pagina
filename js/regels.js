@@ -431,6 +431,35 @@ function gemiddelde(waarden                   )                {
   return echte.length ? echte.reduce((som, w) => som + w, 0) / echte.length : null;
 }
 
+// --- Vormzones ----------------------------------------------------------------
+
+                                                                               
+
+/** De vier vormzones, van boven naar onder. De rode grens is `vorm_min`, dezelfde als de waarschuwing van de coach. */
+export function vormzones(drempels          ) {
+  const { vorm_uitgerust: uitgerust, vorm_opbouw: opbouw, vorm_min: min } = drempels;
+  return [
+    { naam: "uitgerust"            , van: uitgerust, tot: null,
+      uitleg: "Je vermoeidheid ligt onder je fitheid: je bent fris. Goed voor een wedstrijd of een harde training." },
+    { naam: "normaal"            , van: opbouw, tot: uitgerust,
+      uitleg: "Je traint ongeveer wat je gewend bent. Hier zit je meestal tijdens een gewone trainingsweek." },
+    { naam: "zware opbouw"            , van: min, tot: opbouw,
+      uitleg: "Je traint meer dan je gewend bent, bijvoorbeeld na een lange MTB-rit. Dat maakt je sterker, " +
+        "maar alleen als er daarna rustige dagen volgen." },
+    { naam: "overbelast"            , van: null, tot: min,
+      uitleg: "Je vermoeidheid ligt veel hoger dan je fitheid. Hier stijgt het risico op een blessure: " +
+        "neem rust tot je vorm weer uit deze zone is." },
+  ];
+}
+
+export function vormzone(vorm               , drempels          )                  {
+  if (vorm === null) return null;
+  if (vorm > drempels.vorm_uitgerust) return "uitgerust";
+  if (vorm >= drempels.vorm_opbouw) return "normaal";
+  if (vorm >= drempels.vorm_min) return "zware opbouw";
+  return "overbelast";
+}
+
 /** HRV, rusthartslag en vorm. `wellness` is de lijst in domeintaal, oplopend op datum. */
 export function herstelWaarschuwingen(wellness                        , drempels          ,
                                       vandaag       )                 {

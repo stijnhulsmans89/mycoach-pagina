@@ -1,7 +1,7 @@
 // De pagina-data: alles wat de pagina toont, en de keuzes die ze maakt (standaardtraining, herinneringen,
 // ernst van een waarschuwing). De pagina tekent alleen; zo is wat ze beslist getest. Bevat nooit de API-sleutel.
 
-                                                
+                                                         
                                                 
 import { dagenTussen, maandag, plusDagen, weekdag,            } from "./datum.js";
 import * as momentopname from "./momentopname.js";
@@ -114,6 +114,44 @@ function indicator(waarschuwingen                       , prog            , vand
   return { stand: "op schema", uitleg: "Geen waarschuwingen en de opbouw loopt volgens plan." };
 }
 
+// Voor het oordeel over de vorm: welke waarschuwingen wegen het zwaarst, en hoe ze daar heten
+const PIJN_SIGNAAL                         = { kniepijn: "Kniepijn: zie Pijn", ochtendpijn: "Ochtendpijn: zie Pijn" };
+const MIN_DAGEN_VORM = 7;
+
+const VORM_ZIN                                  = {
+  "uitgerust": "Je bent uitgerust en er zijn geen signalen van overbelasting.",
+  "normaal": "Je vorm zit in de normale zone en er zijn geen signalen van overbelasting.",
+  "zware opbouw": "Je traint meer dan je gewend bent. Dat maakt je sterker, als er nu rustige dagen volgen.",
+  "overbelast": "Je vermoeidheid ligt veel hoger dan je fitheid: je bent overbelast. Neem rust tot je vorm uit de rode zone is.",
+};
+
+/** Het oordeel bovenaan de tab Belasting: in orde, let op of overbelast. Het zwaarste signaal wint. */
+function vormOordeel(status        , drempels                     ) {
+  const metFitheid = status.wellness.filter((w) => w.fitheid !== null && w.vermoeidheid !== null);
+  const zone = regels.vormzone(status.belasting.vorm, drempels);
+  // de vorm zelf toont de grafiek al; de andere waarschuwingen staan bovenaan uitgelegd
+  const andere = status.waarschuwingen.filter((w) => w.code !== "vorm");
+  const rood = andere.filter((w) => ROOD.has(w.code));
+  const signalen = andere.map((w) => PIJN_SIGNAAL[w.code] ?? w.titel);
+  let stand                                            , zin        ;
+  if (zone === "overbelast" || rood.length) {
+    stand = "overbelast";
+    zin = zone === "overbelast" ? VORM_ZIN.overbelast
+      : "Er is een waarschuwing die je moet volgen. Lees het advies bovenaan en doe het rustig aan.";
+  } else if (zone === "zware opbouw" || andere.length) {
+    stand = "let op";
+    zin = andere.length ? "Je lichaam geeft signalen dat het minder goed herstelt. Lees het advies bovenaan."
+      : VORM_ZIN["zware opbouw"];
+  } else if (zone) {
+    stand = "in orde";
+    zin = VORM_ZIN[zone];
+  } else {
+    stand = null;
+    zin = "Nog geen gegevens over je vorm.";
+  }
+  return { stand, zin, signalen, vormzone: zone, weinig_gegevens: metFitheid.length > 0 && metFitheid.length < MIN_DAGEN_VORM };
+}
+
 /** Wat er deze week al gedaan is, voor de grote cijfers en de kaart Vandaag. */
 function dezeWeek(status        , vandaag       ) {
   const ma = maandag(vandaag);
@@ -169,8 +207,10 @@ export async function paginaData(intervals           , opslag        , vandaag  
     },
     belasting: status.wellness.map((w) => ({
       datum: w.datum, belasting: belastingPerDag.get(w.datum) ?? 0, fitheid: w.fitheid,
-      vermoeidheid: w.vermoeidheid, vorm: w.vorm,
+      vermoeidheid: w.vermoeidheid, vorm: w.vorm, vormzone: regels.vormzone(w.vorm, profiel.drempels),
     })),
+    vorm_oordeel: vormOordeel(status, profiel.drempels),
+    vormzones: regels.vormzones(profiel.drempels),
     toegelaten_loopvolume: status.toegelaten_loopvolume,
     deze_week: dezeWeek(status, vandaag),
     // voor de blokjesgrafiek: hoogte = intensiteit t.o.v. LTHR of FTP, met de grens van zone 2

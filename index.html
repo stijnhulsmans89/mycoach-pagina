@@ -141,15 +141,14 @@ details p { margin-top: 4px; }
 .legenda { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: .85rem; color: var(--muted); }
 .legenda i { display: inline-block; width: 12px; height: 3px; vertical-align: middle; margin-right: 6px; }
 .tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--bg); font-size: .8rem; padding: 4px 8px; border-radius: 4px; max-width: calc(100% - 8px); white-space: normal; z-index: 1; }
-/* Gsm: 2 × 2 compacte rijen, label links en getal rechts. Breder: één rij van vier. */
-.cijfers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
-.cijfer { background: var(--panel); border: 0; border-radius: 12px; padding: 6px 10px; min-width: 0;
-  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 0 8px; }
-.cijfer .label { font-size: .75rem; letter-spacing: .03em; }
-.cijfer b { font: 600 1.15rem/1.2 var(--display); font-variant-numeric: tabular-nums; text-align: right; }
-.cijfer .duiding { grid-column: 1 / -1; font-size: .75rem; color: var(--muted); }
-.cijfer:last-child:nth-child(odd) { grid-column: 1 / -1; }
-@media (min-width: 560px) { .cijfers { grid-template-columns: none; grid-auto-columns: minmax(0, 1fr); grid-auto-flow: column; } .cijfer:last-child:nth-child(odd) { grid-column: auto; } .cijfer { grid-template-columns: minmax(0, 1fr); } .cijfer b { text-align: left; } }
+/* Het oordeel over de vorm, bovenaan de tab Belasting: één woord, één zin, de signalen erachter */
+.oordeel { background: var(--panel); border-radius: 16px; padding: 14px; display: grid; gap: 6px; border-left: 6px solid var(--line); }
+.oordeel b { font: 800 1.6rem/1.1 var(--display); text-transform: uppercase; letter-spacing: .04em; }
+.oordeel[data-stand="in orde"] { border-left-color: var(--ok); } .oordeel[data-stand="in orde"] b { color: var(--ok); }
+.oordeel[data-stand="let op"] { border-left-color: var(--warn); } .oordeel[data-stand="let op"] b { color: var(--warn); }
+.oordeel[data-stand="overbelast"] { border-left-color: var(--bad); } .oordeel[data-stand="overbelast"] b { color: var(--bad); }
+.oordeel ul { margin: 0; padding-left: 18px; }
+.vormzones { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
 .uitleg { background: var(--panel); border: 0; border-radius: 14px; padding: 10px 14px; }
 .uitleg p + p { margin-top: 6px; }
 .schaal { display: grid; gap: 4px; margin-top: 8px; font-size: .92rem; }
@@ -361,13 +360,13 @@ input[type="password"] { font: inherit; color: var(--ink); background: var(--bg)
 
     <div class="paneel" role="tabpanel" id="p-belasting" aria-labelledby="tab-belasting" hidden>
       <h2>Belasting en vorm</h2>
-      <div class="cijfers" id="cijfers"></div>
+      <div class="oordeel" id="vorm-oordeel" role="status"></div>
       <div class="grafiek" id="belastinggrafiek"></div>
-      <div class="legenda"><span><i style="background:var(--accent)"></i>Fitheid</span><span><i style="background:var(--tweede)"></i>Vermoeidheid</span><span><i style="background:var(--line);height:8px"></i>Belasting per dag</span></div>
-      <details id="belasting-uitleg"><summary>Wat betekenen deze cijfers?</summary><div class="uitleg">
-        <p><b>Fitheid</b> is je gemiddelde trainingsbelasting van ongeveer de laatste zes weken: hoeveel training je lichaam gewend is. Ze stijgt traag als je regelmatig traint.</p>
-        <p><b>Vermoeidheid</b> is hetzelfde over ongeveer de laatste week. Na een zware MTB-rit springt ze omhoog.</p>
-        <p><b>Vorm</b> is fitheid min vermoeidheid. Licht negatief (tot ongeveer -10) is normaal tijdens een opbouw; rond -20 of lager moet je goed herstellen. Meer in <code>data/leren.md</code>.</p>
+      <div class="legenda"><span><i style="background:var(--accent)"></i>Vorm</span><span><i style="background:var(--muted);height:8px"></i>Belasting per dag</span></div>
+      <details id="belasting-uitleg"><summary>Hoe lees ik dit?</summary><div class="uitleg">
+        <p>De lijn is je <b>vorm</b>: je fitheid (wat je lichaam gewend is, over ongeveer zes weken) min je vermoeidheid (de laatste week). De kleur achter de lijn is de vormzone:</p>
+        <ul class="vormzones" id="vormzones"></ul>
+        <p>De staafjes onderaan zijn de <b>belasting per dag</b>: zo zie je welke training je vorm deed zakken. Tik op een dag voor de getallen. Meer in <code>data/leren.md</code>.</p>
       </div></details>
       <details class="ftp" id="ftp-uitklap">
         <summary><span id="ftp-titel">FTP</span></summary>

@@ -15,6 +15,8 @@ export function toon(D) {
   if (leeg === null) leeg = main.innerHTML; else main.innerHTML = leeg;
     const $ = (id) => document.getElementById(id);
   const el = (tag, cls, tekst) => { const e = document.createElement(tag); if (cls) e.className = cls; if (tekst != null) e.textContent = tekst; return e; };
+  // de kleur van elke vormzone: dezelfde betekeniskleuren als de rest van de pagina
+  const ZONE_TINT = { "uitgerust": "ok", "normaal": "ok", "zware opbouw": "warn", "overbelast": "bad" };
   const DAGEN = ["zondag", "maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag"];
   const datum = (s) => new Date(s + "T12:00:00");
   const kort = (s) => datum(s).toLocaleDateString("nl-BE", { day: "numeric", month: "short" });
@@ -257,7 +259,7 @@ export function toon(D) {
     const lv = (D.deze_week || {}).loopvolume || {}, nu = D.belasting.length ? D.belasting[D.belasting.length - 1] : {};
     const fiets = D.fietstijd_deze_week || 0, vorm = nu.vorm;
     const over = lv.toegelaten != null && lv.gelopen > lv.toegelaten;
-    const vormWoord = vorm == null ? null : vorm > 0 ? ["uitgerust", "ok"] : vorm > -10 ? ["normaal", "ok"] : vorm > -20 ? ["let op", "warn"] : ["goed herstellen", "bad"];
+    const vormWoord = nu.vormzone ? [nu.vormzone, ZONE_TINT[nu.vormzone]] : null;
     const cijfer = (waarde, extra, label, duiding, tint) => {
       const c = el("div"), b = el("b", null, waarde); if (extra) b.append(el("small", null, extra));
       c.append(b, el("span", "label", label));
@@ -406,30 +408,63 @@ export function toon(D) {
     });
   }
 
-  const nu = D.belasting.length ? D.belasting[D.belasting.length - 1] : {};
-  // Een kort woord bij de vorm, met de grenzen uit de uitleg: tot -10 normaal, rond -20 of lager goed herstellen
-  const duidVorm = (v) => v == null ? null : v > 0 ? "uitgerust" : v > -10 ? "normaal" : v > -20 ? "let op" : "goed herstellen";
-  for (const [naam, waarde, duiding] of [["Fitheid", nu.fitheid], ["Vermoeidheid", nu.vermoeidheid], ["Vorm", nu.vorm, duidVorm(nu.vorm)], ["Loopvolume", D.toegelaten_loopvolume + " min"],
-      ["Fietstijd", D.fietstijd_deze_week != null ? (Math.round(D.fietstijd_deze_week / 6) / 10) + " u" : null]]) {
-    const c = el("div", "cijfer"); c.append(el("span", "label", naam), el("b", null, waarde ?? "—"));
-    if (duiding) c.append(el("span", "duiding", duiding));
-    $("cijfers").append(c);
+  // Het oordeel over de vorm: in orde, let op of overbelast, met de zin en de signalen erachter (berekend in paginadata.ts)
+  function bouwOordeel() {
+    const o = D.vorm_oordeel, doel = $("vorm-oordeel");
+    doel.replaceChildren(); $("vormzones").replaceChildren(); delete doel.dataset.stand;
+    if (o.stand) { doel.dataset.stand = o.stand; doel.append(el("b", null, o.stand)); }
+    doel.append(el("p", null, o.zin));
+    if (o.signalen.length) { const ul = el("ul"); for (const s of o.signalen) ul.append(el("li", null, s)); doel.append(ul); }
+    if (o.weinig_gegevens) doel.append(el("p", "klein", "Nog weinig gegevens: je vorm wordt betrouwbaarder na een paar weken."));
+    for (const z of D.vormzones) {
+      const li = el("li"), grens = z.van == null ? `onder ${z.tot}` : z.tot == null ? `boven +${z.van}` : `${z.van} tot ${z.tot > 0 ? "+" : ""}${z.tot}`;
+      const naam = el("b", null, z.naam[0].toUpperCase() + z.naam.slice(1)); naam.style.color = `var(--${ZONE_TINT[z.naam]})`;
+      li.append(naam, ` (${grens}): ${z.uitleg}`); $("vormzones").append(li);
+    }
   }
+  bouwOordeel();
 
+  // Vorm over zes weken op de vier vormzones, met de belasting per dag als staafjes eronder: oorzaak en gevolg
   function tekenBelasting() {
-    const doel = $("belastinggrafiek"), rijen = D.belasting.filter((r) => r.fitheid != null);
-    if (!rijen.length) { doel.replaceChildren(el("p", "klein", "Nog geen gegevens over belasting.")); return; }
-    const hoogste = Math.max(10, ...rijen.map((r) => Math.max(r.fitheid, r.vermoeidheid || 0, r.belasting || 0)));
-    const max = Math.ceil(hoogste / 20) * 20;
+    const doel = $("belastinggrafiek"), rijen = D.belasting.filter((r) => r.vorm != null);
+    if (!rijen.length) { doel.replaceChildren(el("p", "klein", "Nog geen gegevens over je vorm.")); return; }
+    const zones = D.vormzones, grenzen = zones.flatMap((z) => [z.van, z.tot]).filter((g) => g != null);
+    const vormen = rijen.map((r) => r.vorm), hoogsteGrens = Math.max(...grenzen), laagsteGrens = Math.min(...grenzen);
+    const min = Math.min(laagsteGrens - 10, Math.floor(Math.min(...vormen) / 10) * 10);
+    const max = Math.max(hoogsteGrens + 15, Math.ceil(Math.max(...vormen) / 10) * 10);
+    // onder de zones een eigen strook voor de staafjes, zodat ze niet in de rode zone lijken te staan
+    const strookOnder = min - (max - min) * 0.3;
+    const hoogsteBelasting = Math.max(1, ...rijen.map((r) => r.belasting || 0));
     grafiek(doel, {
-      dagen: rijen.map((r) => r.datum), min: 0, max, ticks: [0, max / 2, max], label: "Fitheid, vermoeidheid en belasting per dag",
+      dagen: rijen.map((r) => r.datum), min: strookOnder, max, hoogte: 240, ticks: [...new Set(grenzen)].sort((a, b) => a - b),
+      label: "Vorm per dag op de vormzones, met de belasting per dag",
       teken(svg, x, y, strook) {
-        const b = Math.max(3, Math.min(8, strook * 0.6));
-        rijen.forEach((r, i) => { if (r.belasting) svg.append(svgEl("rect", { x: x(i) - b / 2, y: y(r.belasting), width: b, height: y(0) - y(r.belasting), fill: "var(--line)" })); });
-        svg.append(svgEl("path", { d: pad(rijen.map((r, i) => [x(i), y(r.vermoeidheid ?? 0)])), fill: "none", stroke: "var(--tweede)", "stroke-width": 2 }));
-        svg.append(svgEl("path", { d: pad(rijen.map((r, i) => [x(i), y(r.fitheid)])), fill: "none", stroke: "var(--accent)", "stroke-width": 2.5 }));
+        const links = x(0) - strook / 2, rechts = x(rijen.length - 1) + strook / 2;
+        for (const z of zones) {
+          const boven = y(z.tot ?? max), onder = y(z.van ?? min);
+          if (z.naam !== "normaal") svg.append(svgEl("rect", { x: links, y: boven, width: rechts - links, height: onder - boven, fill: `var(--${ZONE_TINT[z.naam]}-soft)` }));
+        }
+        // de staafjes: eigen schaal, in de strook onder de zones
+        const b = Math.max(3, Math.min(8, strook * 0.6)), ruimte = y(strookOnder) - y(min) - 4;
+        rijen.forEach((r, i) => {
+          if (!r.belasting) return;
+          const h = (r.belasting / hoogsteBelasting) * ruimte;
+          svg.append(svgEl("rect", { x: x(i) - b / 2, y: y(strookOnder) - h, width: b, height: h, fill: "var(--muted)", opacity: 0.5 }));
+        });
+        svg.append(svgEl("path", { d: pad(rijen.map((r, i) => [x(i), y(r.vorm)])), fill: "none", stroke: "var(--accent)", "stroke-width": 2.5 }));
+        // de naam van elke zone links in de zone, met een rand in de kleur van de kaart zodat de lijn hem niet verbergt
+        for (const z of zones) {
+          const t = svgEl("text", { x: links + 4, y: y(z.tot ?? max) + 13, stroke: "var(--panel)", "stroke-width": 3, "paint-order": "stroke" });
+          t.textContent = z.naam; if (z.naam !== "normaal") t.style.fill = `var(--${ZONE_TINT[z.naam]})`;
+          svg.append(t);
+        }
+        const laatste = rijen[rijen.length - 1];
+        svg.append(svgEl("circle", { cx: x(rijen.length - 1), cy: y(laatste.vorm), r: 5, fill: `var(--${ZONE_TINT[laatste.vormzone] || "accent"})`, stroke: "var(--panel)", "stroke-width": 2 }));
       },
-      tip(d) { const r = rijen.find((q) => q.datum === d); return `${kort(d)} · fitheid ${r.fitheid} · vermoeidheid ${r.vermoeidheid} · vorm ${r.vorm} · belasting ${r.belasting}`; },
+      tip(d) {
+        const r = rijen.find((q) => q.datum === d);
+        return `${kort(d)} · ${r.vormzone} · vorm ${r.vorm} · belasting ${r.belasting} · fitheid ${r.fitheid} · vermoeidheid ${r.vermoeidheid}`;
+      },
     });
   }
 

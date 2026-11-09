@@ -7,7 +7,8 @@ import {            planweek as berekenPlanweek, planweekVoor } from "./planweek
 import * as regels from "./regels.js";
 import * as seizoen from "./seizoen.js";
 
-export const TOON_DAGEN = 28;
+// zes weken: lang genoeg om een opbouw en een lichte week te zien
+export const TOON_DAGEN = 42;
 export const WELLNESS_DAGEN = 60;
 // zo ver terug zoekt de coach de laatste Garmin-FTP (een wellness-veld)
 export const FTP_DAGEN = 365;
