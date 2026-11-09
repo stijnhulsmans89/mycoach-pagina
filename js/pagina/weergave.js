@@ -369,21 +369,44 @@ export function toon(D) {
       if (i % stap === 0) { const t = svgEl("text", { x: x(i), y: hoogte - 6, "text-anchor": i === 0 && !opts.band ? "start" : "middle" }); t.textContent = kort(d); svg.append(t); }
     });
     opts.teken(svg, x, y, strook);
-    doel.replaceChildren(svg);
-    const tip = el("div", "tip"); tip.hidden = true; doel.append(tip);
-    const toon = (e) => {
+    // de gekozen dag: een lijn over de hele hoogte, en wat de grafiek zelf nog markeert (opts.markeer)
+    const markering = svgEl("g", { "pointer-events": "none" });
+    svg.append(markering);
+    // de details van de gekozen dag staan vast onder de grafiek, niet onder je vinger
+    const detail = el("div", "detail"); detail.setAttribute("aria-live", "polite");
+    detail.style.minHeight = (opts.detailRegels || 2) * 1.45 + "em";
+    svg.tabIndex = 0;
+    doel.replaceChildren(svg, detail);
+    // standaard: de laatste dag tot vandaag (bij weken: de week van vandaag)
+    let vast = 0;
+    dagen.forEach((d, i) => { if (d <= VANDAAG) vast = i; });
+    const toon = (i) => {
+      markering.replaceChildren(svgEl("line", { x1: x(i), x2: x(i), y1: m.t, y2: hoogte - m.b, stroke: "var(--ink)", "stroke-width": 1.5, opacity: 0.45 }));
+      opts.markeer?.(markering, i, x, y, strook);
+      const inhoud = opts.tip(dagen[i]);
+      detail.replaceChildren();
+      if (!inhoud) { detail.append(el("b", null, kort(dagen[i])), el("div", "klein", "Geen gegevens op deze dag.")); return; }
+      detail.append(el("b", null, inhoud.kop));
+      for (const regel of inhoud.regels || []) { const r = el("div"); r.append(regel); detail.append(r); }
+    };
+    const index = (e) => {
       const r = svg.getBoundingClientRect(), px = (e.clientX - r.left) * (breedte / r.width);
       const i = opts.band ? Math.floor((px - m.l) / strook) : Math.round((px - m.l) / (strook || 1));
-      if (i < 0 || i >= n) { tip.hidden = true; return; }
-      const tekst = opts.tip(dagen[i]); if (!tekst) { tip.hidden = true; return; }
-      tip.textContent = tekst; tip.hidden = false;
-      const links = Math.min(Math.max(0, (x(i) / breedte) * r.width - tip.offsetWidth / 2), doel.clientWidth - tip.offsetWidth);
-      tip.style.left = links + "px"; tip.style.top = "4px";
+      return Math.min(Math.max(i, 0), n - 1);
     };
-    svg.addEventListener("pointermove", toon);
-    svg.addEventListener("pointerdown", toon);
-    svg.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") tip.hidden = true; });
+    // muis: wijzen toont, klikken zet vast, weggaan toont de vaste dag; vinger: tikken of slepen zet vast
+    svg.addEventListener("pointermove", (e) => { const i = index(e); if (e.pointerType !== "mouse") vast = i; toon(i); });
+    svg.addEventListener("pointerdown", (e) => { vast = index(e); toon(vast); });
+    svg.addEventListener("pointerleave", () => toon(vast));
+    svg.addEventListener("keydown", (e) => {
+      const stapje = { ArrowLeft: -1, ArrowRight: 1 }[e.key];
+      if (!stapje) return;
+      e.preventDefault(); vast = Math.min(Math.max(vast + stapje, 0), n - 1); toon(vast);
+    });
+    if (n) toon(vast);
   }
+  // datum met weekdag, voor de details onder een grafiek: "zo 8 nov."
+  const lang = (s) => datum(s).toLocaleDateString("nl-BE", { weekday: "short", day: "numeric", month: "short" });
   const pad = (punten) => punten.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
   const vandaagLijn = (svg, x, y, i, max) => svg.append(svgEl("line", { x1: x(i), x2: x(i), y1: y(0), y2: y(max), stroke: "var(--bad)", "stroke-width": 1.5, "stroke-dasharray": "2 3" }));
 
@@ -403,7 +426,7 @@ export function toon(D) {
       tip(d) {
         const k = D.pijn.kniepijn.filter((p) => p.datum === d).map((p) => `knie ${p.score} (${p.training})`);
         const o = D.pijn.ochtendpijn.filter((p) => p.datum === d).map((p) => `ochtend ${p.score}`);
-        return [kort(d), ...k, ...o].join(" · ");
+        return { kop: lang(d), regels: [...k, ...o] };
       },
     });
   }
@@ -433,23 +456,32 @@ export function toon(D) {
     const min = Math.min(laagsteGrens - 10, Math.floor(Math.min(...vormen) / 10) * 10);
     const max = Math.max(hoogsteGrens + 15, Math.ceil(Math.max(...vormen) / 10) * 10);
     // onder de zones een eigen strook voor de staafjes, zodat ze niet in de rode zone lijken te staan
-    const strookOnder = min - (max - min) * 0.3;
+    const strookOnder = min - (max - min) * 0.45;
     const hoogsteBelasting = Math.max(1, ...rijen.map((r) => r.belasting || 0));
+    // elke activiteit een eigen stukje in de kleur van zijn soort; een hard loopje in de kleur van hard lopen
+    const soortVanActiviteit = (a) => a.soort ? soortVan({ soort: a.soort, hard: a.hard && a.soort === "loopje" }) : { label: "Andere training", kleur: "muted" };
+    let staaf = () => {};
     grafiek(doel, {
       dagen: rijen.map((r) => r.datum), min: strookOnder, max, hoogte: 240, ticks: [...new Set(grenzen)].sort((a, b) => a - b),
-      label: "Vorm per dag op de vormzones, met de belasting per dag",
+      label: "Vorm per dag op de vormzones, met de belasting per activiteit", detailRegels: 4,
       teken(svg, x, y, strook) {
         const links = x(0) - strook / 2, rechts = x(rijen.length - 1) + strook / 2;
         for (const z of zones) {
           const boven = y(z.tot ?? max), onder = y(z.van ?? min);
           if (z.naam !== "normaal") svg.append(svgEl("rect", { x: links, y: boven, width: rechts - links, height: onder - boven, fill: `var(--${ZONE_TINT[z.naam]}-soft)` }));
         }
-        // de staafjes: eigen schaal, in de strook onder de zones
-        const b = Math.max(3, Math.min(8, strook * 0.6)), ruimte = y(strookOnder) - y(min) - 4;
+        // de staafjes: eigen schaal, in de strook onder de zones, gestapeld per activiteit (de eerste onderaan)
+        const b = Math.max(4, Math.min(14, strook * 0.7)), ruimte = y(strookOnder) - y(min) - 4;
+        staaf = (i) => ({ x: x(i) - b / 2, breedte: b, hoogte: (rijen[i].belasting / hoogsteBelasting) * ruimte, bodem: y(strookOnder) });
         rijen.forEach((r, i) => {
           if (!r.belasting) return;
-          const h = (r.belasting / hoogsteBelasting) * ruimte;
-          svg.append(svgEl("rect", { x: x(i) - b / 2, y: y(strookOnder) - h, width: b, height: h, fill: "var(--muted)", opacity: 0.5 }));
+          let bodem = y(strookOnder);
+          for (const a of r.activiteiten || []) {
+            if (!a.belasting) continue;
+            const h = (a.belasting / hoogsteBelasting) * ruimte;
+            svg.append(svgEl("rect", { x: x(i) - b / 2, y: bodem - h, width: b, height: h, fill: `var(--${soortVanActiviteit(a).kleur})`, stroke: "var(--panel)", "stroke-width": 1 }));
+            bodem -= h;
+          }
         });
         svg.append(svgEl("path", { d: pad(rijen.map((r, i) => [x(i), y(r.vorm)])), fill: "none", stroke: "var(--accent)", "stroke-width": 2.5 }));
         // de naam van elke zone links in de zone, met een rand in de kleur van de kaart zodat de lijn hem niet verbergt
@@ -461,11 +493,31 @@ export function toon(D) {
         const laatste = rijen[rijen.length - 1];
         svg.append(svgEl("circle", { cx: x(rijen.length - 1), cy: y(laatste.vorm), r: 5, fill: `var(--${ZONE_TINT[laatste.vormzone] || "accent"})`, stroke: "var(--panel)", "stroke-width": 2 }));
       },
+      // de gekozen dag: een stip op de vormlijn en een rand rond het staafje
+      markeer(g, i, x, y) {
+        const r = rijen[i], s = staaf(i);
+        if (r.belasting) g.append(svgEl("rect", { x: s.x - 2, y: s.bodem - s.hoogte - 2, width: s.breedte + 4, height: s.hoogte + 4, fill: "none", stroke: "var(--ink)", "stroke-width": 1.5, rx: 2 }));
+        g.append(svgEl("circle", { cx: x(i), cy: y(r.vorm), r: 4.5, fill: "var(--accent)", stroke: "var(--ink)", "stroke-width": 2 }));
+      },
       tip(d) {
         const r = rijen.find((q) => q.datum === d);
-        return `${kort(d)} · ${r.vormzone} · vorm ${r.vorm} · belasting ${r.belasting} · fitheid ${r.fitheid} · vermoeidheid ${r.vermoeidheid}`;
+        const activiteiten = (r.activiteiten || []).map((a) => {
+          const s = soortVanActiviteit(a), regel = el("span", "activiteit"), blok = el("i");
+          blok.style.background = `var(--${s.kleur})`;
+          regel.append(blok, `${s.label}${a.naam && a.naam !== s.label ? " · " + a.naam : ""} — ${a.belasting}`);
+          return regel;
+        });
+        return { kop: `${lang(d)} · vorm ${r.vorm} (${r.vormzone})`,
+          regels: [...(activiteiten.length ? activiteiten : ["Geen training"]), `fitheid ${r.fitheid} · vermoeidheid ${r.vermoeidheid}`] };
       },
     });
+    // de legende: de vorm, en een blokje per soort die in deze weken voorkomt
+    const legenda = $("belasting-legenda"), gezien = new Map();
+    for (const r of rijen) for (const a of r.activiteiten || []) if (a.belasting) { const s = soortVanActiviteit(a); gezien.set(s.label, s); }
+    legenda.replaceChildren();
+    const item = (kleurNaam, label, hoog) => { const sp = el("span"), i = el("i"); i.style.background = `var(--${kleurNaam})`; if (hoog) i.style.height = "8px"; sp.append(i, label); legenda.append(sp); };
+    item("accent", "Vorm");
+    for (const s of gezien.values()) item(s.kleur, s.label, true);
   }
 
   // De weg naar de wedstrijd: aftelling, verticale tijdlijn, loopvolume en fitheid
@@ -530,7 +582,7 @@ export function toon(D) {
           if (trap.length) svg.append(svgEl("path", { d: pad(trap), fill: "none", stroke: "var(--muted)", "stroke-width": 2 }));
           if (hier >= 0) vandaagLijn(svg, x, y, hier, vmax);
         },
-        tip(d) { const w = weken.find((q) => q.week === d); return `week van ${kort(d)} · richtvolume ${w.richtvolume ?? "—"} · gepland ${w.gepland ?? "—"} · gelopen ${w.werkelijk ?? "—"} min`; },
+        tip(d) { const w = weken.find((q) => q.week === d); return { kop: `week van ${kort(d)}`, regels: [`richtvolume ${w.richtvolume ?? "—"} · gepland ${w.gepland ?? "—"} · gelopen ${w.werkelijk ?? "—"} min`] }; },
       });
     };
 
@@ -551,7 +603,7 @@ export function toon(D) {
           if (trap.length) svg.append(svgEl("path", { d: pad(trap), fill: "none", stroke: "var(--muted)", "stroke-width": 2 }));
           if (hier >= 0) vandaagLijn(svg, x, y, hier, fmax);
         },
-        tip(d) { const w = weken.find((q) => q.week === d); return `week van ${kort(d)} · richtvolume ${w.richtvolume_fiets_uur ?? "—"} u · gefietst ${uur(w.fietstijd) ?? "—"} u`; },
+        tip(d) { const w = weken.find((q) => q.week === d); return { kop: `week van ${kort(d)}`, regels: [`richtvolume ${w.richtvolume_fiets_uur ?? "—"} u · gefietst ${uur(w.fietstijd) ?? "—"} u`] }; },
       });
     };
 
@@ -580,9 +632,9 @@ export function toon(D) {
         },
         tip(d) {
           const r = geschiedenis.find((q) => q.datum === d);
-          if (r) return `${kort(d)} · fitheid ${r.fitheid}`;
-          if (d === f.streefdatum) return `streefwaarde ${f.streef} op ${kort(d)}`;
-          return d > VANDAAG ? `${kort(d)} · nu ${f.huidig ?? "—"}, verwacht vandaag ${f.verwacht ?? "—"}, streef ${f.streef}` : null;
+          if (r) return { kop: lang(d), regels: [`fitheid ${r.fitheid}`] };
+          if (d === f.streefdatum) return { kop: lang(d), regels: [`streefwaarde ${f.streef} op de wedstrijddag`] };
+          return d > VANDAAG ? { kop: lang(d), regels: [`nu ${f.huidig ?? "—"}, verwacht vandaag ${f.verwacht ?? "—"}, streef ${f.streef}`] } : null;
         },
       });
     };

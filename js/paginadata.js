@@ -167,9 +167,13 @@ function dezeWeek(status        , vandaag       ) {
 export async function paginaData(intervals           , opslag        , vandaag       , gemaaktOp        ) {
   const status = await momentopname.status(intervals, opslag, vandaag);
   const [schaal, profiel, oefeningen] = await Promise.all([opslag.pijnschaal(), opslag.profiel(), opslag.oefeningen()]);
-  const belastingPerDag = new Map               ();
+  // per dag de activiteiten in volgorde, met hun soort: de staafjes op de pagina krijgen de kleur van de soort
+  const activiteitenPerDag = new Map                                                                                          ();
   for (const activiteit of status.activiteiten) {
-    belastingPerDag.set(activiteit.datum, (belastingPerDag.get(activiteit.datum) ?? 0) + (activiteit.belasting || 0));
+    const lijst = activiteitenPerDag.get(activiteit.datum) ?? [];
+    lijst.push({ soort: regels.soortVan({ type: activiteit.type }), hard: activiteit.hard, naam: activiteit.naam,
+      belasting: activiteit.belasting || 0 });
+    activiteitenPerDag.set(activiteit.datum, lijst);
   }
   const prog = await progressie(opslag, status, vandaag);
   const kine = profiel.kine;
@@ -206,8 +210,9 @@ export async function paginaData(intervals           , opslag        , vandaag  
       kniepijn_uitleg: schaal.kniepijn,
     },
     belasting: status.wellness.map((w) => ({
-      datum: w.datum, belasting: belastingPerDag.get(w.datum) ?? 0, fitheid: w.fitheid,
-      vermoeidheid: w.vermoeidheid, vorm: w.vorm, vormzone: regels.vormzone(w.vorm, profiel.drempels),
+      datum: w.datum, belasting: (activiteitenPerDag.get(w.datum) ?? []).reduce((som, a) => som + a.belasting, 0),
+      fitheid: w.fitheid, vermoeidheid: w.vermoeidheid, vorm: w.vorm, vormzone: regels.vormzone(w.vorm, profiel.drempels),
+      activiteiten: activiteitenPerDag.get(w.datum) ?? [],
     })),
     vorm_oordeel: vormOordeel(status, profiel.drempels),
     vormzones: regels.vormzones(profiel.drempels),

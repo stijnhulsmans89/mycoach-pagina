@@ -140,7 +140,11 @@ details p { margin-top: 4px; }
 .grafiek text { fill: var(--muted); font: 11px var(--body); font-variant-numeric: tabular-nums; }
 .legenda { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: .85rem; color: var(--muted); }
 .legenda i { display: inline-block; width: 12px; height: 3px; vertical-align: middle; margin-right: 6px; }
-.tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--bg); font-size: .8rem; padding: 4px 8px; border-radius: 4px; max-width: calc(100% - 8px); white-space: normal; z-index: 1; }
+/* De details van de gekozen dag: vast onder de grafiek, zodat je vinger ze niet bedekt */
+.detail { border-top: 1px solid var(--line); margin: 8px 4px 0; padding-top: 8px; font-size: .85rem; line-height: 1.45; font-variant-numeric: tabular-nums; }
+.detail b { font-weight: 800; }
+.detail .activiteit i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: 6px; }
+.grafiek svg:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 /* Het oordeel over de vorm, bovenaan de tab Belasting: één woord, één zin, de signalen erachter */
 .oordeel { background: var(--panel); border-radius: 16px; padding: 14px; display: grid; gap: 6px; border-left: 6px solid var(--line); }
 .oordeel b { font: 800 1.6rem/1.1 var(--display); text-transform: uppercase; letter-spacing: .04em; }
@@ -362,11 +366,11 @@ input[type="password"] { font: inherit; color: var(--ink); background: var(--bg)
       <h2>Belasting en vorm</h2>
       <div class="oordeel" id="vorm-oordeel" role="status"></div>
       <div class="grafiek" id="belastinggrafiek"></div>
-      <div class="legenda"><span><i style="background:var(--accent)"></i>Vorm</span><span><i style="background:var(--muted);height:8px"></i>Belasting per dag</span></div>
+      <div class="legenda" id="belasting-legenda"><span><i style="background:var(--accent)"></i>Vorm</span></div>
       <details id="belasting-uitleg"><summary>Hoe lees ik dit?</summary><div class="uitleg">
         <p>De lijn is je <b>vorm</b>: je fitheid (wat je lichaam gewend is, over ongeveer zes weken) min je vermoeidheid (de laatste week). De kleur achter de lijn is de vormzone:</p>
         <ul class="vormzones" id="vormzones"></ul>
-        <p>De staafjes onderaan zijn de <b>belasting per dag</b>: zo zie je welke training je vorm deed zakken. Tik op een dag voor de getallen. Meer in <code>data/leren.md</code>.</p>
+        <p>De staafjes onderaan zijn de <b>belasting</b> van je trainingen, één stukje per training in de kleur van de soort (zoals in het weekplan): zo zie je welke training je vorm deed zakken. Tik op een dag, of wijs hem aan met de muis, en onder de grafiek staan de training(en) van die dag met hun belasting. Zonder keuze staat daar vandaag. Meer in <code>data/leren.md</code>.</p>
       </div></details>
       <details class="ftp" id="ftp-uitklap">
         <summary><span id="ftp-titel">FTP</span></summary>
