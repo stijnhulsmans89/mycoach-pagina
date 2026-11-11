@@ -1,10 +1,14 @@
 // Service worker: houdt de bestanden van de pagina op de gsm, zodat ze ook zonder verbinding opent.
 // Eerst het netwerk (zo komt een nieuwe versie meteen binnen), anders de bewaarde kopie.
 // Alleen de eigen bestanden: verzoeken naar intervals.icu (met je sleutel) gaan er nooit door en worden nooit bewaard.
-const KAS = "mycoach-pagina";
+// De versie in de naam volgt VERSIE in paginadata.ts: een nieuwe versie ruimt de oude kas op.
+const KAS = "mycoach-pagina-v2";
 
 self.addEventListener("install", () => self.skipWaiting());
-self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
+self.addEventListener("activate", (e) => e.waitUntil((async () => {
+  for (const naam of await caches.keys()) if (naam.startsWith("mycoach-pagina") && naam !== KAS) await caches.delete(naam);
+  await self.clients.claim();
+})()));
 
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);

@@ -30,6 +30,11 @@ export async function haalData(intervals           , vandaag       , profiel    
 }
 
 export async function status(intervals           , opslag        , vandaag       ) {
+  return (await statusMetData(intervals, opslag, vandaag)).status;
+}
+
+/** De status, met de ruwe data en de regels van de planweek erbij: de pagina rekent daar verder mee. */
+export async function statusMetData(intervals           , opslag        , vandaag       ) {
   const profiel = await opslag.profiel();
   const { drempels } = profiel;
   const [data, alleWedstrijden, seizoensplan, checkpoints] = await Promise.all([
@@ -68,7 +73,7 @@ export async function status(intervals           , opslag        , vandaag      
     return { ...regels.activiteitSamenvatting(activiteit), hard: reden !== null, hard_reden: reden };
   };
 
-  return {
+  const uit = {
     vandaag,
     planweek,
     profiel: atleetprofiel,
@@ -95,6 +100,7 @@ export async function status(intervals           , opslag        , vandaag      
     huidige_fase: seizoen.faseOp(seizoensplan, vandaag),
     planweek_fase: seizoen.faseOp(seizoensplan, planweek),
   };
+  return { status: uit, data, planweek: regelsPlanweek, profiel };
 }
 
                                                         

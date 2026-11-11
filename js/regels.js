@@ -167,9 +167,16 @@ export function garminFtp(wellness               , totEnMet        )            
                            
                               
                           
+                                                          
+                           
+                                                                  
+                           
+                                                                                           
+                                        
  
 
 export function activiteitSamenvatting(activiteit            )                         {
+  const inMinuten = (seconden          ) => seconden.map((s) => pyRound(s / 60, 1));
   return {
     id: activiteit.id,
     datum: activiteit.datum,
@@ -179,6 +186,9 @@ export function activiteitSamenvatting(activiteit            )                  
     belasting: activiteit.belasting,
     gem_hartslag: activiteit.gem_hartslag,
     kniepijn: activiteit.kniepijn,
+    zones_hartslag: inMinuten(activiteit.zone_seconden),
+    zones_vermogen: inMinuten(activiteit.vermogen_zone_seconden),
+    gepland_event: activiteit.gepland_event,
   };
 }
 
@@ -254,12 +264,18 @@ export function vergelijkbaar(eerder       , later       , start              ) 
 
                                 
               
+                                                                                        
+                                                    
+                                                                                                    
                    
                     
                                    
  
 
-/** Lopen mag vooruit als de kniepijn hoogstens de grens is en de ochtendpijn de dag erna niet hoger. */
+/**
+ * Lopen mag vooruit als de kniepijn hoogstens de grens is en de ochtendpijn de dag erna niet hoger.
+ * Een loopje zonder kniescore maakt de week onvolledig: een ontbrekende score telt niet als in orde.
+ */
 export function pijnregelWeek(week       , activiteiten              , ochtendpijn             ,
                               drempels          , start               = null)                {
   const redenen           = [];
@@ -283,7 +299,8 @@ export function pijnregelWeek(week       , activiteiten              , ochtendpi
       redenen.push(`ochtendpijn steeg van ${voor} naar ${na} de dag na de training van ${dag}`);
     }
   }
-  return { week, in_orde: redenen.length === 0, redenen, loopjes_zonder_kniepijn: zonderScore };
+  const status = redenen.length ? "niet in orde" : zonderScore.length ? "onvolledig" : "in orde";
+  return { week, status, in_orde: status === "in orde", redenen, loopjes_zonder_kniepijn: zonderScore };
 }
 
 // --- Opbouw en stap terug ------------------------------------------------------
@@ -293,7 +310,8 @@ export function pijnregelWeek(week       , activiteiten              , ochtendpi
 /**
  * Het toegelaten loopvolume per week, van de start van de opbouw tot en met de planweek.
  * Elke week is `start`, `opbouw` (+groei), `licht` (elke vierde opbouwweek) of
- * `stap_terug` (na een week waarin de pijnregel niet in orde was).
+ * `stap_terug` (na een week waarin de pijnregel niet in orde was) of `geen_groei` (na een onvolledige week:
+ * een loopje zonder kniescore laat het volume niet groeien, maar zet geen stap terug).
  */
 export function opbouw(weken         , volume         , pijnregel                           ,
                        profiel         )               {
@@ -320,6 +338,9 @@ export function opbouw(weken         , volume         , pijnregel               
     let soort        , toegelaten        ;
     if (k === 0) {
       [soort, toegelaten, teller] = ["start", profiel.start_loopvolume, 1];
+    } else if (pijnregel.get(weken[k - 1]) .status === "onvolledig") {
+      // een ontbrekende kniescore: niet in orde om op te bouwen, maar ook geen pijn; het volume groeit niet
+      [soort, toegelaten] = ["geen_groei", basis(k)];
     } else if (!pijnregel.get(weken[k - 1]) .in_orde) {
       [soort, teller] = ["stap_terug", 1];
       const goed = weken.slice(0, k - 1).map((_, i) => i).filter((i) => pijnregel.get(weken[i]) .in_orde);
@@ -390,7 +411,10 @@ function waarschuwing(code        , titel        , wat        , advies        ) 
   return { code, titel, wat, advies };
 }
 
-export function pijnWaarschuwingen(activiteiten              , ochtendpijn             , drempels          ,
+/** Wat de pijnwaarschuwingen van een training nodig hebben: ook de pagina rekent ze opnieuw, met een wachtende score. */
+                                                                                      
+
+export function pijnWaarschuwingen(activiteiten                  , ochtendpijn             , drempels          ,
                                    vandaag       , dagen = 7, start               = null)                 {
   const waarschuwingen                 = [];
   const vanaf = plusDagen(vandaag, -dagen);

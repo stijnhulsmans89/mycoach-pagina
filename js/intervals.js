@@ -77,6 +77,14 @@ export const TYPES_PER_SOORT                              = {
                            
                                                 
                           
+                                                                                 
+                                   
+                                                                                                      
+                                  
+                                                                                            
+                                  
+                                                                                                    
+                                        
                               
                                                       
                       
@@ -112,6 +120,13 @@ function dagVan(waarde         )        {
   return String(waarde).slice(0, 10);
 }
 
+/** `icu_zone_times` is een lijst `{id: "Z1", secs}`, met ook zones als "SS" (sweet spot): alleen Z1, Z2, ... tellen. */
+function vermogenZones(zones         )           {
+  if (!Array.isArray(zones)) return [];
+  return zones.filter((z) => typeof z?.id === "string" && /^Z\d+$/.test(z.id))
+    .sort((a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1))).map((z) => z.secs || 0);
+}
+
 export function naarActiviteit(r     , velden        )             {
   const type = r.type ?? null;
   return {
@@ -124,6 +139,10 @@ export function naarActiviteit(r     , velden        )             {
     seconden: r.moving_time || r.elapsed_time || 0,
     belasting: r.icu_training_load ?? null,
     zone_seconden: r.icu_hr_zone_times || [],
+    vermogen_zone_seconden: vermogenZones(r.icu_zone_times),
+    vermogen_zones: r.icu_power_zones ?? null,
+    hartslag_zones: r.icu_hr_zones ?? null,
+    gepland_event: r.paired_event_id ?? null,
     gem_hartslag: r.average_heartrate ?? null,
     eftp: r.icu_rolling_ftp ?? null,
     kniepijn: r[velden.kniepijn] ?? null,
@@ -267,6 +286,13 @@ export class Intervals {
       .filter((e) => String(e.external_id ?? "").startsWith(kenmerkBegin))
       .map((e) => ({ id: e.id ?? null, datum: dagVan(e.start_date_local || e.id), kenmerk: e.external_id,
                      naam: e.name ?? null, tekst: e.description ?? "" }));
+  }
+
+  /** De geplande trainingen van MyCoach tussen twee dagen: hun id en kenmerk, om activiteiten aan te koppelen. */
+  async geplandeTrainingen(oudste       , nieuwste       )                                                                           {
+    return (await this.events(oudste, nieuwste))
+      .filter((e) => e.category === "WORKOUT" && String(e.external_id ?? "").startsWith(KENMERK))
+      .map((e) => ({ id: e.id ?? null, datum: dagVan(e.start_date_local || e.id), kenmerk: e.external_id }));
   }
 
           async wijzigWellness(datum       , velden     )               {

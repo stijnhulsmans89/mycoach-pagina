@@ -1,9 +1,12 @@
-// De pagina-data: alles wat de pagina toont, en de keuzes die ze maakt (standaardtraining, herinneringen,
-// ernst van een waarschuwing). De pagina tekent alleen; zo is wat ze beslist getest. Bevat nooit de API-sleutel.
+// De pagina-data: alles wat de pagina toont, en de keuzes die ze maakt (dagoordeel, check-ins, gepland tegenover
+// gedaan, 80/20, weekstatus). De pagina tekent alleen; zo is wat ze beslist getest. Bevat nooit de API-sleutel.
 
-                                                         
+                                                                   
                                                 
-import { dagenTussen, maandag, plusDagen, weekdag,            } from "./datum.js";
+import { dagenTussen, maandag, plusDagen,            } from "./datum.js";
+import { isHard } from "./controle.js";
+import * as dagoordeel from "./dagoordeel.js";
+import * as gg from "./geplandgedaan.js";
 import * as momentopname from "./momentopname.js";
                                                 
 import { pyRound } from "./py.js";
@@ -11,30 +14,9 @@ import * as regels from "./regels.js";
 import * as seizoen from "./seizoen.js";
 
 export const ACHTER_MARGE_FITHEID = 3;
-const ROOD = new Set(["kniepijn", "ochtendpijn", "kine"]);
-
-// Bewust verschillend: de pagina toont een voorstel als dat er is (met "nog geen akkoord" erbij), maar het
-// geplande loopvolume telt alleen wat akkoord heeft. De notities in intervals.icu bevatten nooit een voorstel.
-function weekplanKort(plan     ) {
-  const huidig = plan.voorstel || plan.akkoord;
-  return { week: plan.week, status: plan.status, trainingen: huidig.trainingen, uitleg: huidig.uitleg ?? null };
-}
-
-/** De week op de pagina: deze week, of volgende week zodra die akkoord heeft. */
-async function weekschema(opslag        , vandaag       ) {
-  const deze = maandag(vandaag);
-  const volgende = plusDagen(deze, 7);
-  const planVolgende = await opslag.weekplan(volgende);
-  if (planVolgende && planVolgende.akkoord) {
-    return { week: volgende, weekplan: weekplanKort(planVolgende), volgende_week: null };
-  }
-  const plan = await opslag.weekplan(deze);
-  let vooruit                                        ;
-  if (planVolgende && planVolgende.voorstel) vooruit = { week: volgende, status: "voorstel" };
-  else if (weekdag(vandaag) === 6) vooruit = { week: volgende, status: "geen" };
-  else vooruit = null;
-  return { week: deze, weekplan: plan ? weekplanKort(plan) : null, volgende_week: vooruit };
-}
+/** De versie van de pagina-data: een momentopname met een andere versie toont de pagina niet (eerst verbinding nodig). */
+export const VERSIE = 2;
+const PIJN_CODES = new Set(["kniepijn", "ochtendpijn"]);
 
 async function geplandLoopvolume(opslag        , week       )                         {
   const plan = await opslag.weekplan(week);
@@ -61,6 +43,7 @@ async function progressie(opslag        , status        , vandaag       ) {
   const doeldag        = seizoensplan.doel.datum;
   const werkelijk = new Map(status.loopvolume_per_week.map((w) => [w.week, w.minuten]));
   const fietstijd = new Map(status.fietstijd_per_week.map((w) => [w.week, w.minuten]));
+  const toegelaten = new Map(status.opbouw.weken.map((w) => [w.week, w.toegelaten]));
   const loopvolume = [];
   for (let week = maandag(start); week <= maandag(doeldag); week = plusDagen(week, 7)) {
     const fase = seizoen.faseOp(seizoensplan, week);
@@ -71,6 +54,7 @@ async function progressie(opslag        , status        , vandaag       ) {
       werkelijk: week <= vandaag ? werkelijk.get(week) ?? null : null,
       fietstijd: week <= vandaag ? fietstijd.get(week) ?? null : null,
       richtvolume_fiets_uur: fase ? fase.richtvolume_fiets_uur ?? null : null,
+      toegelaten: toegelaten.get(week) ?? null,
     });
   }
 
@@ -95,78 +79,216 @@ async function progressie(opslag        , status        , vandaag       ) {
 
                                                          
 
-function indicator(waarschuwingen                       , prog            , vandaag       ) {
-  if (waarschuwingen.length) return { stand: "pas op", uitleg: "Er zijn waarschuwingen. Lees ze en volg het advies." };
-  if (!prog.leeg) {
-    const fitheid = prog.fitheid;
-    if (fitheid.huidig !== null && fitheid.verwacht !== null && fitheid.huidig < fitheid.verwacht - ACHTER_MARGE_FITHEID) {
-      return { stand: "achter", uitleg: `Je fitheid (${fitheid.huidig}) ligt onder de lijn naar je ` +
-        `streefwaarde (${fitheid.verwacht} verwacht vandaag).` };
-    }
-    // alleen afgelopen weken: een week die nog loopt, is nog niet achter
-    const vorige = prog.loopvolume.filter((w) => w.gepland && w.werkelijk !== null && plusDagen(w.week, 6) < vandaag);
-    const laatste = vorige[vorige.length - 1];
-    if (laatste && laatste.werkelijk  < 0.8 * laatste.gepland ) {
-      return { stand: "achter", uitleg: `In de week van ${laatste.week} liep je ` +
-        `${laatste.werkelijk} van de ${laatste.gepland} geplande minuten.` };
-    }
+/**
+ * Op schema of achter, voor de A-wedstrijd: achter als de fitheid ver onder de verwachte ligt, of als je de vorige
+ * week veel minder liep dan gepland. Zonder gat om in te halen: de coach stuurt het plan bij.
+ */
+function schema(prog            , vandaag       )                                                           {
+  if (prog.leeg) return null;
+  const fitheid = prog.fitheid;
+  // alleen afgelopen weken: een week die nog loopt, is nog niet achter
+  const vorige = prog.loopvolume.filter((w) => w.gepland && w.werkelijk !== null && plusDagen(w.week, 6) < vandaag);
+  const laatste = vorige[vorige.length - 1];
+  const fitheidAchter = fitheid.huidig !== null && fitheid.verwacht !== null && fitheid.huidig < fitheid.verwacht - ACHTER_MARGE_FITHEID;
+  const volumeAchter = Boolean(laatste && laatste.werkelijk  < 0.8 * laatste.gepland );
+  if (fitheidAchter || volumeAchter) {
+    return { stand: "achter", uitleg: (fitheidAchter ? "Je fitheid groeit trager dan het seizoensplan verwachtte." :
+      "Je liep vorige week minder dan gepland.") + " De coach stuurt het plan bij: er valt niets in te halen." };
   }
-  return { stand: "op schema", uitleg: "Geen waarschuwingen en de opbouw loopt volgens plan." };
+  return { stand: "op schema", uitleg: "De opbouw loopt volgens het seizoensplan." };
 }
 
-// Voor het oordeel over de vorm: welke waarschuwingen wegen het zwaarst, en hoe ze daar heten
-const PIJN_SIGNAAL                         = { kniepijn: "Kniepijn: zie Pijn", ochtendpijn: "Ochtendpijn: zie Pijn" };
-const MIN_DAGEN_VORM = 7;
-
-const VORM_ZIN                                  = {
-  "uitgerust": "Je bent uitgerust en er zijn geen signalen van overbelasting.",
-  "normaal": "Je vorm zit in de normale zone en er zijn geen signalen van overbelasting.",
-  "zware opbouw": "Je traint meer dan je gewend bent. Dat maakt je sterker, als er nu rustige dagen volgen.",
-  "overbelast": "Je vermoeidheid ligt veel hoger dan je fitheid: je bent overbelast. Neem rust tot je vorm uit de rode zone is.",
-};
-
-/** Het oordeel bovenaan de tab Belasting: in orde, let op of overbelast. Het zwaarste signaal wint. */
-function vormOordeel(status        , drempels                     ) {
-  const metFitheid = status.wellness.filter((w) => w.fitheid !== null && w.vermoeidheid !== null);
-  const zone = regels.vormzone(status.belasting.vorm, drempels);
-  // de vorm zelf toont de grafiek al; de andere waarschuwingen staan bovenaan uitgelegd
-  const andere = status.waarschuwingen.filter((w) => w.code !== "vorm");
-  const rood = andere.filter((w) => ROOD.has(w.code));
-  const signalen = andere.map((w) => PIJN_SIGNAAL[w.code] ?? w.titel);
-  let stand                                            , zin        ;
-  if (zone === "overbelast" || rood.length) {
-    stand = "overbelast";
-    zin = zone === "overbelast" ? VORM_ZIN.overbelast
-      : "Er is een waarschuwing die je moet volgen. Lees het advies bovenaan en doe het rustig aan.";
-  } else if (zone === "zware opbouw" || andere.length) {
-    stand = "let op";
-    zin = andere.length ? "Je lichaam geeft signalen dat het minder goed herstelt. Lees het advies bovenaan."
-      : VORM_ZIN["zware opbouw"];
-  } else if (zone) {
-    stand = "in orde";
-    zin = VORM_ZIN[zone];
-  } else {
-    stand = null;
-    zin = "Nog geen gegevens over je vorm.";
-  }
-  return { stand, zin, signalen, vormzone: zone, weinig_gegevens: metFitheid.length > 0 && metFitheid.length < MIN_DAGEN_VORM };
-}
-
-/** Wat er deze week al gedaan is, voor de grote cijfers en de kaart Vandaag. */
-function dezeWeek(status        , vandaag       ) {
+/** Loopvolume, toegelaten volume en fietstijd per week: tot de A-wedstrijd, of zonder A-wedstrijd de voorbije 6 weken. */
+function volume(status        , prog            , vandaag       ) {
+  if (!prog.leeg) return prog.loopvolume;
   const ma = maandag(vandaag);
-  const opbouw = status.opbouw.weken.find((w) => w.week === ma);
-  const gelopen = status.loopvolume_per_week.find((w) => w.week === ma)?.minuten ?? 0;
-  const gedaan = status.activiteiten.filter((a) => ma <= a.datum && a.datum <= vandaag).map((a) => ({
-    datum: a.datum, soort: regels.soortVan({ type: a.type }), naam: a.naam, minuten: a.minuten,
-  }));
-  return { loopvolume: { gelopen, toegelaten: opbouw ? opbouw.toegelaten : null }, gedaan };
+  const loop = new Map(status.loopvolume_per_week.map((w) => [w.week, w.minuten]));
+  const fiets = new Map(status.fietstijd_per_week.map((w) => [w.week, w.minuten]));
+  const toegelaten = new Map(status.opbouw.weken.map((w) => [w.week, w.toegelaten]));
+  const weken = [];
+  for (let week = plusDagen(ma, -35); week <= ma; week = plusDagen(week, 7)) {
+    weken.push({ week, gepland: null, richtvolume: null, werkelijk: loop.get(week) ?? 0, fietstijd: fiets.get(week) ?? 0,
+                 richtvolume_fiets_uur: null, toegelaten: toegelaten.get(week) ?? null });
+  }
+  return weken;
+}
+
+// --- Het plan van deze en volgende week, met gepland tegenover gedaan ----------------------------
+
+/** Een week op de pagina: alleen een weekplan met akkoord heeft trainingen; een voorstel staat er alleen als status. */
+function weekVoorPagina(plan            , week       , uitkomsten                       , nietGepland                            ,
+                        drempels          ) {
+  const status = plan?.voorstel ? "voorstel" : plan?.akkoord ? "akkoord" : "geen";
+  if (!plan?.akkoord) return { week, status, akkoord: false, akkoord_op: null, bijsturing_vanaf: null, uitleg: null, trainingen: [], niet_gepland: [] };
+  return {
+    week, status, akkoord: true,
+    akkoord_op: plan.akkoord_op ?? null, bijsturing_vanaf: plan.bijsturing_vanaf ?? null, uitleg: plan.akkoord.uitleg ?? null,
+    trainingen: (plan.akkoord.trainingen         ).map((t, index)                                                                => ({
+      ...t, index, hard: isHard(t, drempels), uitkomst: uitkomsten.find((u) => u.week === week && u.index === index) ?? null,
+    })),
+    niet_gepland: nietGepland,
+  };
+}
+
+                                                        
+
+/** De dag van vandaag: de trainingen (alleen uit een akkoord), een wedstrijd, morgen en de volgende training. */
+function vandaagVoorPagina(vandaag       , deze                , volgende                , wedstrijden                     ) {
+  const alle = [...deze.trainingen, ...volgende.trainingen];
+  const kort = (t     ) => ({ datum: t.datum         , soort: t.soort          , naam: (t.naam ?? null)                 ,
+                              duur_min: t.duur_min          , hard: Boolean(t.hard) });
+  const morgen = plusDagen(vandaag, 1);
+  const na = alle.filter((t) => t.datum > vandaag).sort((a, b) => (a.datum < b.datum ? -1 : a.datum > b.datum ? 1 : 0));
+  const wedstrijd = wedstrijden.find((w) => w.datum === vandaag) ?? null;
+  return {
+    datum: vandaag,
+    weekplan: deze.akkoord,
+    trainingen: deze.trainingen.filter((t) => t.datum === vandaag),
+    rustdag: deze.akkoord && !wedstrijd && !deze.trainingen.some((t) => t.datum === vandaag),
+    wedstrijd,
+    morgen: alle.filter((t) => t.datum === morgen).map(kort),
+    volgende: na.length ? kort(na[0]) : null,
+  };
+}
+
+/**
+ * Moet de coach het plan nakijken als de pijnscore van `dag` verandert? Ja als de week erna al een weekplan met
+ * akkoord heeft: de pijnregel van een week bepaalt het plan van de week erna. Voor ochtendpijn geef je de dag van
+ * de training (de dag ervoor), want ochtendpijn telt bij de training van gisteren.
+ */
+export function planNakijken(D                          , dag       )          {
+  const na = plusDagen(maandag(dag), 7);
+  return [D.plan.deze_week, D.plan.volgende_week].some((w) => w.akkoord && w.week === na);
+}
+
+/** Wat het dagoordeel nodig heeft, uit de pagina-data: zo rekent de pagina het opnieuw met een wachtende score. */
+function dagoordeelInvoer(D            , waarschuwingen                       , ochtendpijnVandaag         )                              {
+  const v = D.vandaag;
+  const open = v.trainingen.filter((t) => !t.uitkomst || t.uitkomst.status === "te doen");
+  return {
+    vandaag: v.datum, waarschuwingen, vormzone: D.weekstatus.cijfers.vormzone,
+    ochtendpijn_vandaag: ochtendpijnVandaag,
+    open_vandaag: open.map((t) => ({ datum: t.datum, soort: t.soort, naam: t.naam ?? null, duur_min: t.duur_min, hard: Boolean(t.hard) })),
+    gepland_vandaag: v.trainingen.length > 0, volgende: v.volgende,
+    wedstrijd: v.wedstrijd ? { naam: v.wedstrijd.naam } : null, weekplan: v.weekplan,
+  };
+}
+
+/**
+ * De pagina-data met de scores die op dit toestel nog wachten op verbinding: ze tellen al mee in de pijnsignalen,
+ * het dagoordeel, de check-ins en het logboek. Zonder wachtende scores verandert er niets.
+ */
+export function metWachtend(D            , wachtend                       )             {
+  const knie = new Map(wachtend.filter((w) => w.soort === "knie").map((w) => [String(w.activiteit), w.waarde]));
+  const logboek = D.logboek.map((a) => knie.has(String(a.id)) ? { ...a, kniepijn: knie.get(String(a.id)) , wacht: true } : a);
+  const ochtend = new Map(D.pijn.ochtendpijn.map((p) => [p.datum, p.score          ]));
+  for (const w of wachtend) if (w.soort === "ochtend") ochtend.set(w.datum, w.waarde);
+  const pijn = regels.pijnWaarschuwingen(logboek.slice().reverse(), ochtend, { kniepijn_max: D.pijn.kniepijn_max }            ,
+    D.momentopname, 7, D.pijn.ochtendtest_start);
+  const waarschuwingen = [...pijn, ...D.waarschuwingen.filter((w) => !PIJN_CODES.has(w.code))]
+    .map((w) => ({ ...w, ernst: dagoordeel.ernst(w.code) }));
+  const vandaag = D.momentopname;
+  return {
+    ...D,
+    logboek,
+    waarschuwingen,
+    dagoordeel: dagoordeel.dagoordeel(dagoordeelInvoer(D, waarschuwingen, ochtend.has(vandaag))),
+    checkins: dagoordeel.checkins(vandaag, plusDagen(vandaag, -1), D.logboek.slice().reverse(),
+      D.pijn.ochtendpijn.find((p) => p.datum === vandaag)?.score ?? null, wachtend),
+  };
 }
 
 /** `gemaakt_op` is het tijdstip van de berekening, tot op de minuut (`2026-11-08T21:05`). */
 export async function paginaData(intervals           , opslag        , vandaag       , gemaaktOp        ) {
-  const status = await momentopname.status(intervals, opslag, vandaag);
+  const { status, data, planweek } = await momentopname.statusMetData(intervals, opslag, vandaag);
   const [schaal, profiel, oefeningen] = await Promise.all([opslag.pijnschaal(), opslag.profiel(), opslag.oefeningen()]);
+  const drempels = profiel.drempels;
+  const ma = maandag(vandaag), volgendeMa = plusDagen(ma, 7);
+  const eersteMa = maandag(plusDagen(vandaag, -momentopname.TOON_DAGEN));
+
+  // gepland tegenover gedaan: de weekplannen met akkoord van de getoonde weken, tot en met volgende week
+  const plannen = new Map                   ();
+  for (let week = eersteMa; week <= volgendeMa; week = plusDagen(week, 7)) plannen.set(week, await opslag.weekplan(week));
+  const gepland = [...plannen.values()].flatMap(gg.geplandUit);
+  const events = new Map((await intervals.geplandeTrainingen(eersteMa, plusDagen(volgendeMa, 6)))
+    .map((e) => [String(e.id), e.kenmerk]));
+  const getoond = data.activiteiten.filter((a) => a.datum >= eersteMa);
+  const zones = { loop_z2_max: status.profiel.loop_z2_max, ftp: status.profiel.ftp ?? null,
+                  loopvolume_marge_pct: drempels.loopvolume_marge_pct };
+  const gekoppeld = gg.koppel(gepland, getoond, events, vandaag, zones);
+  const nietGepland = (week       ) => gekoppeld.activiteiten
+    .filter((a) => a.koppeling === "niet gepland" && maandag(a.datum) === week).map((a) => a.id);
+  const dezeWeek = weekVoorPagina(plannen.get(ma) ?? null, ma, gekoppeld.trainingen, nietGepland(ma), drempels);
+  const volgendeWeek = weekVoorPagina(plannen.get(volgendeMa) ?? null, volgendeMa, gekoppeld.trainingen, [], drempels);
+
+  // het logboek: de gedane activiteiten van de getoonde weken, nieuwste eerst, met hun koppeling en oordeel
+  const logboek = getoond.map((a, i) => {
+    const reden = regels.hardeTraining(a, drempels);
+    const k = gekoppeld.activiteiten[i];
+    return { ...regels.activiteitSamenvatting(a), soort: a.soort, hard: reden !== null, koppeling: k.koppeling,
+             training: k.training, oordeel: k.oordeel, wacht: false };
+  }).reverse();
+
+  // de weekstatus: de stand van deze week
+  const pijnregelDeze = planweek.pijnregel.get(ma)
+    ?? regels.pijnregelWeek(ma, data.activiteiten, planweek.ochtendpijn, drempels, regels.ochtendtestStart(profiel));
+  const pijnregelTot = new Map([...planweek.pijnregel].filter(([w]) => w < ma));
+  const inOrde = regels.wekenInOrde(pijnregelTot, ma);
+  const opbouwDeze = status.opbouw.weken.find((w) => w.week === ma) ?? null;
+  const gelopen = status.loopvolume_per_week.find((w) => w.week === ma)?.minuten ?? 0;
+  const fietstijd = status.fietstijd_per_week.find((w) => w.week === ma)?.minuten ?? 0;
+  const dezeWeekActiviteiten = logboek.filter((a) => a.datum >= ma && a.datum <= vandaag).reverse();
+  const vorm = status.belasting.vorm;
+  const weekstatus = {
+    week: ma,
+    pijnregel: { status: pijnregelDeze.status, redenen: pijnregelDeze.redenen, loopjes_zonder_kniepijn: pijnregelDeze.loopjes_zonder_kniepijn },
+    weken_in_orde: inOrde,
+    weektype: opbouwDeze?.soort ?? null,
+    loopvolume: { gelopen, toegelaten: opbouwDeze?.toegelaten ?? null,
+                  over: opbouwDeze ? Math.max(opbouwDeze.toegelaten - gelopen, 0) : null },
+    harde_trainingen: { gedaan: dezeWeekActiviteiten.filter((a) => a.hard).length,
+                        toegelaten: opbouwDeze?.soort === "stap_terug" ? 0 : regels.hardeTrainingenMax(inOrde, drempels) },
+    ontbrekende_kniescores: dezeWeekActiviteiten.filter((a) => a.soort && a.kniepijn === null)
+      .map((a) => ({ id: a.id, datum: a.datum, naam: a.naam, soort: a.soort })),
+    cijfers: { loopvolume: { gelopen, toegelaten: opbouwDeze?.toegelaten ?? null }, fietstijd_min: fietstijd,
+               vorm, vormzone: regels.vormzone(vorm, drempels) },
+  };
+
+  const oud = await basisData(status, opslag, vandaag, schaal, profiel, oefeningen);
+  const D = {
+    versie: VERSIE,
+    ...oud,
+    gemaakt_op: gemaaktOp,
+    pijn: { ...oud.pijn, kniepijn_max: drempels.kniepijn_max, ochtendtest_start: regels.ochtendtestStart(profiel) },
+    waarschuwingen: status.waarschuwingen.map((w) => ({ ...w, ernst: dagoordeel.ernst(w.code) })),
+    vandaag: vandaagVoorPagina(vandaag, dezeWeek, volgendeWeek, status.wedstrijden),
+    plan: { deze_week: dezeWeek, volgende_week: volgendeWeek },
+    weekstatus,
+    logboek,
+    gepland_vs_gedaan: gekoppeld,
+    tachtig_twintig: gg.tachtigTwintig(data.activiteiten, maandag(plusDagen(ma, -35)), ma),
+    // het dagoordeel en de check-ins rekent metWachtend, zodat de pagina ze met een wachtende score hetzelfde rekent
+    dagoordeel: null                                    ,
+    checkins: null                                  ,
+  };
+  return metWachtend(D, []);
+}
+
+                                                                  
+                 
+                                                                                                                  
+                                                                               
+                                                
+                                                                     
+                                                                      
+                                                                                                             
+                                                  
+                                           
+                                    
+                                
+  
+
+async function basisData(status        , opslag        , vandaag       , schaal     , profiel         , oefeningen     ) {
   // per dag de activiteiten in volgorde, met hun soort: de staafjes op de pagina krijgen de kleur van de soort
   const activiteitenPerDag = new Map                                                                                          ();
   for (const activiteit of status.activiteiten) {
@@ -177,32 +299,14 @@ export async function paginaData(intervals           , opslag        , vandaag  
   }
   const prog = await progressie(opslag, status, vandaag);
   const kine = profiel.kine;
-  const gisteren = plusDagen(vandaag, -1);
-  // de trainingen van de laatste week, nieuwste eerst, om er op de pagina kniepijn bij te zetten
-  const recent = status.activiteiten.filter((a) => a.datum >= plusDagen(vandaag, -7)).reverse().map((a) => ({
-    id: a.id, datum: a.datum, naam: a.naam, type: a.type, soort: regels.soortVan({ type: a.type }), minuten: a.minuten,
-    kniepijn: a.kniepijn,
-  }));
-  // loopjes van gisteren en vandaag zonder kniepijn: de pijnregel draait om het lopen
-  const zonderKniepijn = status.activiteiten
-    .filter((a) => regels.LOOPTYPES.has(a.type ?? "") && a.kniepijn === null && a.datum >= gisteren);
-  // standaard bij het ingeven van kniepijn: zo'n loopje, anders de laatste training
-  const standaard = recent.find((a) => a.soort === "loopje" && a.kniepijn === null && a.datum >= gisteren) ?? recent[0];
   return {
     momentopname: vandaag,
-    gemaakt_op: gemaaktOp,
-    indicator: indicator(status.waarschuwingen, prog, vandaag),
-    waarschuwingen: status.waarschuwingen.map((w) => ({ ...w, ernst: ROOD.has(w.code) ? "rood" : "gewoon" })),
     voorstellen: status.voorstellen,
-    ...(await weekschema(opslag, vandaag)),
     pijn: {
       kniepijn: status.activiteiten.filter((a) => a.kniepijn !== null)
-        .map((a) => ({ datum: a.datum, score: a.kniepijn, training: a.naam })),
+        .map((a) => ({ id: a.id, datum: a.datum, score: a.kniepijn, training: a.naam })),
       ochtendpijn: status.wellness.filter((w) => w.ochtendpijn !== null)
         .map((w) => ({ datum: w.datum, score: w.ochtendpijn })),
-      // voor de herinnering: loopjes van gisteren en vandaag zonder kniepijn (de pijnregel draait om het lopen)
-      loopjes_zonder_kniepijn: zonderKniepijn.map((a) => ({ id: a.id, datum: a.datum, training: a.naam })),
-      standaard_kniepijn: standaard?.id ?? null,
       grens: schaal.grens,
       schaal: schaal.schaal,
       uitleg: schaal.uitleg,
@@ -214,25 +318,17 @@ export async function paginaData(intervals           , opslag        , vandaag  
       fitheid: w.fitheid, vermoeidheid: w.vermoeidheid, vorm: w.vorm, vormzone: regels.vormzone(w.vorm, profiel.drempels),
       activiteiten: activiteitenPerDag.get(w.datum) ?? [],
     })),
-    vorm_oordeel: vormOordeel(status, profiel.drempels),
     vormzones: regels.vormzones(profiel.drempels),
     toegelaten_loopvolume: status.toegelaten_loopvolume,
-    deze_week: dezeWeek(status, vandaag),
     // voor de blokjesgrafiek: hoogte = intensiteit t.o.v. LTHR of FTP, met de grens van zone 2
-    zones: { lthr: status.profiel.lthr, loop_z2_max: status.profiel.loop_z2_max, ftp: status.profiel.ftp },
-    fietstijd_deze_week: status.fietstijd_per_week.find((w) => w.week === maandag(vandaag))?.minuten ?? 0,
+    zones: { lthr: status.profiel.lthr, loop_z2_max: status.profiel.loop_z2_max, ftp: status.profiel.ftp,
+             fiets_z2_pct: gg.STANDAARD_VERMOGENSZONES[1] },
     ftp: status.ftp,
     kine: { oefeningen: kine.oefeningen ?? [], grenzen: kine.grenzen ?? [] },
     oefeningen,
     wedstrijden: status.wedstrijden,
-    activiteiten_recent: recent,
-    // bovenaan de pagina: wat de atleet nog moet ingeven
-    herinneringen: [
-      ...zonderKniepijn.map((a) => ({ soort: "knie"         , activiteit: a.id,
-                                      tekst: `Knie na loopje ${a.datum === vandaag ? "vandaag" : "gisteren"}` })),
-      ...(status.wellness.some((w) => w.datum === vandaag && w.ochtendpijn !== null)
-        ? [] : [{ soort: "ochtend"         , datum: vandaag, tekst: "Ochtendpijn" }]),
-    ],
     progressie: prog,
+    schema: schema(prog, vandaag),
+    volume: volume(status, prog, vandaag),
   };
 }
