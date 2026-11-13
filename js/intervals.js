@@ -25,12 +25,15 @@ export class GeenVerbinding extends AdapterFout {}
                             
  
 
-/** Het HTTP-transport, met Basic-authenticatie `API_KEY:<sleutel>`. */
-export function httpTransport(sleutel        , opties            )            {
-  const auth = "Basic " + btoa(`API_KEY:${sleutel}`);
+/**
+ * Het HTTP-transport, met Basic-authenticatie `API_KEY:<sleutel>`. Zonder sleutel (`null`) gaat er geen
+ * `Authorization` mee: in de cloudsessie zet de proxy van Anthropic die (het netwerkgeheim, ADR 0003).
+ */
+export function httpTransport(sleutel               , opties            )            {
+  const auth                         = sleutel === null ? {} : { Authorization: "Basic " + btoa(`API_KEY:${sleutel}`) };
   return async (methode, pad, params, body) => {
     const url = opties.basis + pad + (params ? "?" + new URLSearchParams(params) : "");
-    const headers                         = { Authorization: auth, Accept: "application/json", ...opties.headers };
+    const headers                         = { ...auth, Accept: "application/json", ...opties.headers };
     if (body !== undefined) headers["Content-Type"] = "application/json";
     let antwoord          ;
     try {

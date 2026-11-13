@@ -1,9 +1,11 @@
-// Haalt de data op bij de intervals en past de regels toe: de inhoud van `status`.
+// Het weekbeeld: alles wat de regels nodig hebben, één keer opgehaald bij intervals.icu en uit de opslag. Daarna
+// rekent alles zonder ophalen: `status` hieronder, de pagina-data (paginadata.ts) en de weekplannen (weekplan.ts)
+// zijn projecties van hetzelfde weekbeeld. Een test geeft een vast weekbeeld mee, zonder intervals.icu.
 
-                                                         
+                                                                      
                                                             
 import { maandag, plusDagen, weekdag,            } from "./datum.js";
-import {            planweek as berekenPlanweek, planweekVoor } from "./planweek.js";
+import {            planweek,                planweekVoor } from "./planweek.js";
 import * as regels from "./regels.js";
 import * as seizoen from "./seizoen.js";
 
@@ -29,22 +31,43 @@ export async function haalData(intervals           , vandaag       , profiel    
   };
 }
 
-export async function status(intervals           , opslag        , vandaag       ) {
-  return (await statusMetData(intervals, opslag, vandaag)).status;
-}
+/** Wat de regels op `vandaag` nodig hebben: de data van intervals.icu, de wedstrijden en de opslag van de coach. */
+                            
+                 
+                   
+             
+                                                                             
+                                   
+                           
+                           
+ 
 
-/** De status, met de ruwe data en de regels van de planweek erbij: de pagina rekent daar verder mee. */
-export async function statusMetData(intervals           , opslag        , vandaag       ) {
+export async function haalWeekbeeld(intervals           , opslag        , vandaag       )                     {
   const profiel = await opslag.profiel();
-  const { drempels } = profiel;
-  const [data, alleWedstrijden, seizoensplan, checkpoints] = await Promise.all([
+  const [data, wedstrijden, seizoensplan, checkpoints] = await Promise.all([
     haalData(intervals, vandaag, profiel), seizoen.haalWedstrijden(intervals, vandaag),
     opslag.seizoensplan(), opslag.checkpoints()]);
+  return { vandaag, profiel, data, wedstrijden, seizoensplan, checkpoints };
+}
+
+/** De regels voor `week` (pijnregel, opbouw, toegelaten loopvolume, harde trainingen, ...): zie planweek.ts. */
+export function regelsVoor(beeld           , week       )           {
+  return planweek(beeld.data, beeld.profiel, beeld.checkpoints, week);
+}
+
+export async function status(intervals           , opslag        , vandaag       ) {
+  return statusUit(await haalWeekbeeld(intervals, opslag, vandaag));
+}
+
+/** De status van `node coach status`: de regels van de planweek, de waarschuwingen en de data van de voorbije weken. */
+export function statusUit(beeld           ) {
+  const { vandaag, profiel, data, checkpoints, seizoensplan } = beeld;
+  const { drempels } = profiel;
   const { activiteiten, atleet } = data;
   const planweek = planweekVoor(vandaag);
 
   const atleetprofiel = regels.atleetprofiel(atleet, profiel);
-  const regelsPlanweek = berekenPlanweek(data, profiel, checkpoints, planweek);
+  const regelsPlanweek = regelsVoor(beeld, planweek);
   const ftp = regels.ftpVergelijking(atleetprofiel.ftp, regels.eftp(activiteiten), drempels, regelsPlanweek.garmin_ftp, vandaag);
   const voorstellen           = [];
   const wellness = data.wellness.map((r) => regels.wellnessSamenvatting(r));
@@ -65,7 +88,7 @@ export async function statusMetData(intervals           , opslag        , vandaa
       regels.ochtendtestStart(profiel)),
     ...regels.herstelWaarschuwingen(wellness, drempels, vandaag),
     ...regels.opbouwWaarschuwingen(opbouw, drempels),
-    ...seizoen.checkpointWaarschuwingen(alleWedstrijden, vandaag, drempels, checkpoints),
+    ...seizoen.checkpointWaarschuwingen(beeld.wedstrijden, vandaag, drempels, checkpoints),
   ];
 
   const samenvatting = (activiteit            ) => {
@@ -73,7 +96,7 @@ export async function statusMetData(intervals           , opslag        , vandaa
     return { ...regels.activiteitSamenvatting(activiteit), hard: reden !== null, hard_reden: reden };
   };
 
-  const uit = {
+  return {
     vandaag,
     planweek,
     profiel: atleetprofiel,
@@ -95,12 +118,11 @@ export async function statusMetData(intervals           , opslag        , vandaa
     harde_trainingen_max: regelsPlanweek.harde_trainingen_max,
     loopintensiteit: regelsPlanweek.loopintensiteit,
     waarschuwingen,
-    wedstrijden: alleWedstrijden.filter((w) => w.datum >= vandaag),
+    wedstrijden: beeld.wedstrijden.filter((w) => w.datum >= vandaag),
     seizoensplan,
     huidige_fase: seizoen.faseOp(seizoensplan, vandaag),
     planweek_fase: seizoen.faseOp(seizoensplan, planweek),
   };
-  return { status: uit, data, planweek: regelsPlanweek, profiel };
 }
 
-                                                        
+                                                  

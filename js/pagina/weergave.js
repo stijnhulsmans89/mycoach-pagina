@@ -217,16 +217,14 @@ function soortVan(t) {
 }
 const kleur = (e, s) => { e.style.setProperty("--kleur", `var(--${s.kleur})`); return e; };
 
-/** Blokjesgrafiek: per stap een blok; breedte = duur, hoogte = midden van het bereik t.o.v. LTHR of FTP. */
+/**
+ * Blokjesgrafiek: per stap een blok; breedte = duur, hoogte = midden van het bereik t.o.v. LTHR of FTP. Of een stap
+ * hard is en hoe hoog hij is, staat al in D (`stap.intensiteit`, berekend in regels.ts).
+ */
 function blokjes(t, groot) {
   const Z = staat.D.zones;
-  const intensiteit = (st) => {
-    if (st.hartslag) { const m = (st.hartslag[0] + st.hartslag[1]) / 2; return { pct: m / Z.lthr, hard: m > Z.loop_z2_max }; }
-    if (st.wattage && Z.ftp) { const m = (st.wattage[0] + st.wattage[1]) / 2; return { pct: m / Z.ftp, hard: m > Z.fiets_z2_pct / 100 * Z.ftp }; }
-    return null;
-  };
   const hoogte = (pct) => Math.max(14, Math.min(100, (pct - 0.4) * 170));
-  const stappen = (t.stappen || []).filter((st) => st.duur_min && intensiteit(st));
+  const stappen = (t.stappen || []).filter((st) => st.duur_min && st.intensiteit);
   if (!stappen.length) return null;
   const g = kleur(el("div", "blokjes" + (groot ? " groot" : "")), soortVan(t));
   g.setAttribute("role", "img");
@@ -234,7 +232,7 @@ function blokjes(t, groot) {
   const lijn = el("span", "z2"); lijn.title = "Grens van zone 2";
   lijn.style.bottom = hoogte(stappen[0].hartslag ? Z.loop_z2_max / Z.lthr : Z.fiets_z2_pct / 100) + "%"; g.append(lijn);
   for (const st of stappen) {
-    const it = intensiteit(st), b = el("i", it.hard ? "hard" : null);
+    const it = st.intensiteit, b = el("i", it.hard ? "hard" : null);
     b.style.flex = st.duur_min; b.style.height = hoogte(it.pct) + "%"; b.title = st.naam;
     g.append(b);
   }
@@ -871,12 +869,12 @@ function wedstrijdSectie(D) {
 function volumeSectie(D) {
   const twee = el("div", "twee");
   const c = D.weekstatus.cijfers, lv = c.loopvolume;
-  const over = lv.toegelaten != null && lv.gelopen > lv.toegelaten;
+  const over = lv.te_veel > 0;
   const loop = el("div"), fiets = el("div");
   const vol = el("div", "grafiek"), fg = el("div", "grafiek");
   loop.append(el("p", "label", "Loopvolume deze week"),
     grootCijfer(String(lv.gelopen), lv.toegelaten != null ? ` / ${lv.toegelaten} min` : " min",
-      lv.toegelaten == null ? null : over ? pil(`${lv.gelopen - lv.toegelaten} min te veel`, "warn", "driehoek") : pil("binnen de grens", "ok", "vink")),
+      lv.toegelaten == null ? null : over ? pil(`${lv.te_veel} min te veel`, "warn", "driehoek") : pil("binnen de grens", "ok", "vink")),
     vol, legende([["t-rustig", "gelopen"], ["warn", "boven het toegelaten"], ["ink", "toegelaten", true], ["muted", "richtvolume", true]]),
     hoeLees("Elke staaf is een week. Het stuk boven het toegelaten volume is oranje: dat is geen vooruitgang, want te snel meer lopen is precies hoe je pees overbelast raakte.",
       "De lijn is het toegelaten loopvolume (de pijnregel en de opbouw), de stippellijn het richtvolume van de fase."));

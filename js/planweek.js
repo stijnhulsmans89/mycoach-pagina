@@ -1,6 +1,6 @@
 // De planweek: de week waarvoor de coach een weekplan of bijsturing maakt, en de regels die er gelden.
-// Rekent alleen, zonder ophalen: de data komt uit `momentopname.haalData`. `status`, `controleer` en
-// `plaats` gebruiken deze module, zodat de knieregels voor een week maar op één plek afgeleid worden.
+// Rekent alleen, zonder ophalen: de data komt uit `momentopname.haalData`. `status`, `controleer`, `plaats` en de
+// weekstatus van de pagina gebruiken deze module, zodat de knieregels voor een week maar op één plek afgeleid worden.
 
                                                          
 import { maandag, plusDagen, weekdag,            } from "./datum.js";
@@ -22,7 +22,11 @@ function weken(van       , tot       )          {
   return resultaat;
 }
 
-/** Pijnregel, opbouw, toegelaten loopvolume, harde trainingen, loopintensiteit en Garmin-FTP voor `week`. */
+/**
+ * Pijnregel, opbouw, toegelaten loopvolume, harde trainingen, loopintensiteit en Garmin-FTP voor `week`: de
+ * planweek van `status` en `controleer`, maar ook de lopende week van de weekstatus op de pagina.
+ * `pijnregel` bevat de weken tot en met `week`; `weken_in_orde` telt alleen de weken ervoor.
+ */
 export function planweek(data      , profiel         , checkpoints             , week       ) {
   const { drempels } = profiel;
   const activiteiten = data.activiteiten;
@@ -47,7 +51,8 @@ export function planweek(data      , profiel         , checkpoints             ,
     toegelaten: laatste.toegelaten,
     stap_terug: stapTerug,
     weken_in_orde: inOrde,
-    harde_trainingen_max: regels.hardeTrainingenMax(inOrde, drempels),
+    // na een stap terug geen enkele harde training, van geen enkele soort: bij twijfel lichter
+    harde_trainingen_max: stapTerug ? 0 : regels.hardeTrainingenMax(inOrde, drempels),
     loopintensiteit: regels.loopintensiteit(inOrde, vorigeWeekGelopen, stapTerug,
       seizoen.kineAkkoordLoopintensiteit(checkpoints), week, drempels),
     garmin_ftp: regels.garminFtp(data.wellness),
