@@ -28,6 +28,8 @@ export const SOORTEN = ["loopje", "mtb", "rollen", "kracht"];
                   
                
                             
+                                                                    
+                            
  
 
 /** De belasting uit het voorstel; voor een MTB-rit zonder schatting ongeveer één per minuut. */
@@ -135,7 +137,17 @@ export function controleer(voorstel     , context         )                {
     overtredingen.push(overtreding("mtb_zondag", "De mountainbike op zondag ligt vast in het weekritme en ontbreekt."));
   }
 
-  const vereist = context.vereiste_loopjes ?? 2;
+  // de kine is leidend: in een looppauze geen loopjes, ook niet om het weekritme te vullen
+  const pauzedagen = new Set(context.looppauze_dagen ?? []);
+  for (const t of eigen) {
+    if (t.soort === "loopje" && pauzedagen.has(t.datum)) {
+      overtredingen.push(overtreding(
+        "looppauze", `Op ${t.datum} staat een loopje, maar de kine raadt lopen af tijdens de looppauze. ` +
+          "Rustig rollen neemt de plaats van het loopje in."));
+    }
+  }
+
+  const vereist = pauzedagen.size ? 0 : context.vereiste_loopjes ?? 2;
   if (loopjes.length > 2 || loopjes.length < vereist) {
     overtredingen.push(overtreding("twee_loopjes", `Het weekritme vraagt twee loopjes, het voorstel heeft er ${loopjes.length}.`));
     if (loopjes.length < vereist && eigen.some((t) => t.soort === "rollen" || t.soort === "kracht")) {

@@ -2,7 +2,7 @@
 // De schrijfkant (wedstrijd zetten, seizoensplan maken) staat in seizoensplan.ts: haar teksten mogen niet
 // op de publieke pagina (zie daar).
 
-                                                               
+                                                                          
 import { dagenTussen, plusDagen,            } from "./datum.js";
                                                            
                                                 
@@ -26,6 +26,50 @@ export function faseOp(seizoensplan            , dag       )             {
 
 export function kineAkkoordLoopintensiteit(checkpoints             )               {
   return checkpoints.loopintensiteit || null;
+}
+
+// --- Looppauze --------------------------------------------------------------------
+
+/** De looppauze die op `dag` loopt, of null. Zonder bevestiging van de kine loopt ze door na de verwachte datum. */
+export function looppauzeOp(checkpoints             , dag       )                   {
+  return (checkpoints.looppauzes ?? []).find((p) => p.van <= dag && (!p.einde || dag < p.einde)) ?? null;
+}
+
+/** De looppauze die nog niet bevestigd beëindigd is, of null. */
+export function lopendeLooppauze(checkpoints             )                   {
+  return (checkpoints.looppauzes ?? []).find((p) => !p.einde) ?? null;
+}
+
+/** De dagen van de week van `week` (maandag) waarop een looppauze loopt. */
+export function looppauzeDagen(checkpoints             , week       )          {
+  return Array.from({ length: 7 }, (_, i) => plusDagen(week, i)).filter((dag) => looppauzeOp(checkpoints, dag));
+}
+
+/** De weken die volledig in een looppauze vallen: daarin wordt niet gelopen, en ze zijn neutraal voor de opbouw. */
+export function pauzeweken(checkpoints             , weken         )             {
+  return new Set(weken.filter((week) => looppauzeDagen(checkpoints, week).length === 7));
+}
+
+export function looppauzeWaarschuwingen(checkpoints             , vandaag       )                 {
+  const pauze = looppauzeOp(checkpoints, vandaag);
+  if (!pauze) return [];
+  const reden = pauze.reden ? ` (${pauze.reden})` : "";
+  if (vandaag > pauze.verwacht_tot) {
+    return [{
+      code: "looppauze_bevestiging",
+      titel: "Looppauze: vraag de kine of je weer mag lopen",
+      wat: `De kine verwachtte de looppauze${reden} tot ${pauze.verwacht_tot}, maar gaf nog geen bevestiging. ` +
+        "Tot dan blijft lopen afgeraden.",
+      advies: "Vraag de kine of je weer mag lopen. Laat het daarna aan de coach weten, dan beëindigt hij de pauze " +
+        "en begin je opnieuw op je laatste loopvolume.",
+    }];
+  }
+  return [{
+    code: "looppauze",
+    titel: `Looppauze van de kine, verwacht tot ${pauze.verwacht_tot}`,
+    wat: `De kine raadt lopen af sinds ${pauze.van}${reden}. Fietsen en de oefeningen van de kine mogen.`,
+    advies: "Niet lopen. Rustig rollen neemt de plaats van de loopjes in, de MTB-rit en de krachttrainingen blijven.",
+  }];
 }
 
 export function checkpointWaarschuwingen(alleWedstrijden             , vandaag       , drempels          ,

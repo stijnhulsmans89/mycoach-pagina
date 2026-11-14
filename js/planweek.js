@@ -22,7 +22,7 @@ function weken(van       , tot       )          {
   return resultaat;
 }
 
-/** Pijnregel, opbouw, toegelaten loopvolume, harde trainingen, loopintensiteit en Garmin-FTP voor `week`. */
+/** Pijnregel, opbouw, toegelaten loopvolume, harde trainingen, loopintensiteit, looppauze en Garmin-FTP voor `week`. */
 export function planweek(data      , profiel         , checkpoints             , week       ) {
   const { drempels } = profiel;
   const activiteiten = data.activiteiten;
@@ -33,11 +33,15 @@ export function planweek(data      , profiel         , checkpoints             ,
   const startTest = regels.ochtendtestStart(profiel);
   const pijnregel = new Map(opbouwweken.map((w) =>
     [w, regels.pijnregelWeek(w, activiteiten, ochtendpijn, drempels, startTest)]));
-  const opbouw = regels.opbouw(opbouwweken, volume, pijnregel, profiel);
+  const pauzeweken = seizoen.pauzeweken(checkpoints, opbouwweken);
+  const opbouw = regels.opbouw(opbouwweken, volume, pijnregel, profiel, pauzeweken);
 
   const laatste = opbouw[opbouw.length - 1];
-  const stapTerug = laatste.soort === "stap_terug";
-  const inOrde = regels.wekenInOrde(pijnregel, week);
+  // ook in een looppauze: na een week die niet in orde was, is fietsen alleen rustig
+  const vorige = opbouw.length > 1 ? pijnregel.get(opbouw[opbouw.length - 2].week)  : null;
+  const stapTerug = laatste.soort === "stap_terug"
+    || (laatste.soort === "looppauze" && vorige?.status === "niet in orde");
+  const inOrde = regels.wekenInOrde(pijnregel, week, pauzeweken);
   const vorigeWeekGelopen = opbouw.length > 1 ? opbouw[opbouw.length - 2].werkelijk : 0;
   return {
     week,
@@ -51,6 +55,9 @@ export function planweek(data      , profiel         , checkpoints             ,
     loopintensiteit: regels.loopintensiteit(inOrde, vorigeWeekGelopen, stapTerug,
       seizoen.kineAkkoordLoopintensiteit(checkpoints), week, drempels),
     garmin_ftp: regels.garminFtp(data.wellness),
+    pauzeweken,
+    // de dagen van de week waarop de kine lopen afraadt: daar mag geen loopje staan
+    looppauze_dagen: seizoen.looppauzeDagen(checkpoints, week),
   };
 }
 

@@ -233,7 +233,7 @@ export async function paginaData(intervals           , opslag        , vandaag  
   const pijnregelDeze = planweek.pijnregel.get(ma)
     ?? regels.pijnregelWeek(ma, data.activiteiten, planweek.ochtendpijn, drempels, regels.ochtendtestStart(profiel));
   const pijnregelTot = new Map([...planweek.pijnregel].filter(([w]) => w < ma));
-  const inOrde = regels.wekenInOrde(pijnregelTot, ma);
+  const inOrde = regels.wekenInOrde(pijnregelTot, ma, planweek.pauzeweken);
   const opbouwDeze = status.opbouw.weken.find((w) => w.week === ma) ?? null;
   const gelopen = status.loopvolume_per_week.find((w) => w.week === ma)?.minuten ?? 0;
   const fietstijd = status.fietstijd_per_week.find((w) => w.week === ma)?.minuten ?? 0;
@@ -248,6 +248,8 @@ export async function paginaData(intervals           , opslag        , vandaag  
                   over: opbouwDeze ? Math.max(opbouwDeze.toegelaten - gelopen, 0) : null },
     harde_trainingen: { gedaan: dezeWeekActiviteiten.filter((a) => a.hard).length,
                         toegelaten: opbouwDeze?.soort === "stap_terug" ? 0 : regels.hardeTrainingenMax(inOrde, drempels) },
+    // de looppauze van de kine die vandaag loopt: een voorzorg, apart getoond, zonder invloed op het dagoordeel
+    looppauze: status.looppauze,
     ontbrekende_kniescores: dezeWeekActiviteiten.filter((a) => a.soort && a.kniepijn === null)
       .map((a) => ({ id: a.id, datum: a.datum, naam: a.naam, soort: a.soort })),
     cijfers: { loopvolume: { gelopen, toegelaten: opbouwDeze?.toegelaten ?? null }, fietstijd_min: fietstijd,

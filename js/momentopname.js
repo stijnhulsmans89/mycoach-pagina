@@ -65,6 +65,7 @@ export async function statusMetData(intervals           , opslag        , vandaa
       regels.ochtendtestStart(profiel)),
     ...regels.herstelWaarschuwingen(wellness, drempels, vandaag),
     ...regels.opbouwWaarschuwingen(opbouw, drempels),
+    ...seizoen.looppauzeWaarschuwingen(checkpoints, vandaag),
     ...seizoen.checkpointWaarschuwingen(alleWedstrijden, vandaag, drempels, checkpoints),
   ];
 
@@ -94,6 +95,9 @@ export async function statusMetData(intervals           , opslag        , vandaa
     fietsen_alleen_rustig: regelsPlanweek.stap_terug,
     harde_trainingen_max: regelsPlanweek.harde_trainingen_max,
     loopintensiteit: regelsPlanweek.loopintensiteit,
+    // de looppauze van de kine die vandaag of in de planweek loopt, of null
+    looppauze: seizoen.looppauzeOp(checkpoints, vandaag)
+      ?? (regelsPlanweek.looppauze_dagen.length ? seizoen.looppauzeOp(checkpoints, regelsPlanweek.looppauze_dagen[0]) : null),
     waarschuwingen,
     wedstrijden: alleWedstrijden.filter((w) => w.datum >= vandaag),
     seizoensplan,

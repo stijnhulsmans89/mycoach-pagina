@@ -312,9 +312,11 @@ export function pijnregelWeek(week       , activiteiten              , ochtendpi
  * Elke week is `start`, `opbouw` (+groei), `licht` (elke vierde opbouwweek) of
  * `stap_terug` (na een week waarin de pijnregel niet in orde was) of `geen_groei` (na een onvolledige week:
  * een loopje zonder kniescore laat het volume niet groeien, maar zet geen stap terug).
+ * Een week volledig in een looppauze van de kine is `looppauze` (0 minuten) en neutraal: ze telt niet als
+ * opbouwweek. De eerste week erna is `na_pauze`: terug op het laatste echte loopvolume, zonder groei.
  */
 export function opbouw(weken         , volume         , pijnregel                           ,
-                       profiel         )               {
+                       profiel         , pauzeweken             = new Set())               {
   const drempels = profiel.drempels;
   const groei = 1 + drempels.groei_pct / 100;
   const licht = drempels.lichte_week_pct / 100;
@@ -336,15 +338,22 @@ export function opbouw(weken         , volume         , pijnregel               
   weken.forEach((week, k) => {
     const werkelijk = volume.get(week) ?? 0;
     let soort        , toegelaten        ;
-    if (k === 0) {
+    if (pauzeweken.has(week)) {
+      [soort, toegelaten] = ["looppauze", 0];
+    } else if (k === 0) {
       [soort, toegelaten, teller] = ["start", profiel.start_loopvolume, 1];
     } else if (pijnregel.get(weken[k - 1]) .status === "onvolledig") {
       // een ontbrekende kniescore: niet in orde om op te bouwen, maar ook geen pijn; het volume groeit niet
       [soort, toegelaten] = ["geen_groei", basis(k)];
     } else if (!pijnregel.get(weken[k - 1]) .in_orde) {
       [soort, teller] = ["stap_terug", 1];
-      const goed = weken.slice(0, k - 1).map((_, i) => i).filter((i) => pijnregel.get(weken[i]) .in_orde);
+      // de laatste week in orde waarin echt gelopen kon worden: een pauzeweek heeft geen loopvolume
+      const goed = weken.slice(0, k - 1).map((_, i) => i)
+        .filter((i) => pijnregel.get(weken[i]) .in_orde && !pauzeweken.has(weken[i]));
       toegelaten = goed.length ? effectief(goed[goed.length - 1]) : pyRound(licht * basis(k));
+    } else if (pauzeweken.has(weken[k - 1])) {
+      // na een looppauze: één week op hetzelfde niveau, om te zien of de pees het lopen weer aankan
+      [soort, toegelaten] = ["na_pauze", basis(k)];
     } else {
       teller += 1;
       if (teller === drempels.lichte_week_elke) {
@@ -362,11 +371,16 @@ export function opbouw(weken         , volume         , pijnregel               
 
 export const TREDEN = ["versnellingen", "tempoblokken", "intervallen"];
 
-/** Het aantal weken op rij voor `week` waarin de pijnregel in orde was. */
-export function wekenInOrde(pijnregel                           , week       )         {
+/**
+ * Het aantal weken op rij voor `week` waarin de pijnregel in orde was. Een pauzeweek in orde is neutraal:
+ * ze verbreekt de reeks niet en telt niet mee. Stijgt de ochtendpijn in een pauzeweek, dan verbreekt ze de reeks wel.
+ */
+export function wekenInOrde(pijnregel                           , week       ,
+                            pauzeweken             = new Set())         {
   let aantal = 0;
   for (const w of [...pijnregel.keys()].filter((w) => w < week).sort().reverse()) {
     if (!pijnregel.get(w) .in_orde) break;
+    if (pauzeweken.has(w)) continue;
     aantal += 1;
   }
   return aantal;

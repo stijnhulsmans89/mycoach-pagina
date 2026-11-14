@@ -14,6 +14,8 @@ export const ERNST                               = {
   kniepijn: "rood", ochtendpijn: "rood", kine: "rood", vorm: "rood",
   hrv: "geel", rusthartslag: "geel", loopvolume: "geel",
   kine_checkpoint: null,
+  // een looppauze is een voorzorg van de kine, geen overbelasting: de pagina toont ze apart
+  looppauze: null, looppauze_bevestiging: null,
 };
 
 /** De ernst van een waarschuwing. Een onbekende code is "let op": bij twijfel lichter. */

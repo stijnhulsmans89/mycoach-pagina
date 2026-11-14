@@ -329,6 +329,7 @@ function schermVandaag(D) {
   const uit = [dagoordeelKaart(D)];
   const v = D.vandaag, getoond = new Set();
   if (D.checkins.ochtend.open && D.dagoordeel.stand !== "nog niet compleet") uit.push(ochtendCheckin(D));
+  if (D.weekstatus.looppauze) uit.push(el("div", "kaart", looppauzeZin(D.weekstatus.looppauze, D.momentopname)));
   if (v.wedstrijd) {
     const k = kleur(el("div", "kaart streep"), SOORT.rust);
     const kop = el("div", "rij-kop"); kop.append(icoon("wedstrijd"), el("strong", null, "Wedstrijddag"));
@@ -476,7 +477,16 @@ function schermPlan(D, r) {
   return [meester];
 }
 
-const WEEKTYPE = { start: "Startweek", opbouw: "Opbouw", licht: "Lichte week", stap_terug: "Stap terug", geen_groei: "Geen groei (een kniescore ontbrak)" };
+const WEEKTYPE = { start: "Startweek", opbouw: "Opbouw", licht: "Lichte week", stap_terug: "Stap terug", geen_groei: "Geen groei (een kniescore ontbrak)",
+  looppauze: "Looppauze van de kine", na_pauze: "Eerste week na de looppauze (geen groei)" };
+
+/** De looppauze van de kine, in één zin: een voorzorg, geen overbelasting. */
+function looppauzeZin(p, vandaag) {
+  const voorbij = p.verwacht_tot < vandaag;
+  return `Looppauze van de kine${p.reden ? ` (${p.reden})` : ""}, ` +
+    (voorbij ? `verwacht tot ${kort(p.verwacht_tot)}: vraag de kine of je weer mag lopen.` : `verwacht tot ${kort(p.verwacht_tot)}.`) +
+    " Niet lopen; fietsen en de oefeningen mogen.";
+}
 
 function weekstatusKaart(D) {
   const w = D.weekstatus, c = w.cijfers;
@@ -496,6 +506,7 @@ function weekstatusKaart(D) {
   if (pr.status === "in orde") regel(el("span", null, "Pijnregel:"), pil("in orde", "ok", "vink"));
   else if (pr.status === "niet in orde") regel(el("span", null, "Pijnregel:"), pil("niet in orde", "bad", "driehoek"), el("span", "klein", pr.redenen.join("; ")));
   else regel(el("span", null, "Pijnregel:"), pil("onvolledig", "warn", "driehoek"), el("span", "klein", "een loopje zonder kniescore telt niet als in orde"));
+  if (w.looppauze) regel(pil("looppauze", "warn", "driehoek"), el("span", null, looppauzeZin(w.looppauze, D.momentopname)));
   regel(el("span", null, w.weken_in_orde === 1 ? "1 week na elkaar in orde" : `${w.weken_in_orde} weken na elkaar in orde`));
   if (w.weektype) {
     const lv = w.loopvolume;

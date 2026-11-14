@@ -46,9 +46,21 @@ export class AdapterFout extends Error {}
                              
  
 
+/**
+ * Een looppauze van de kine: niet lopen vanaf `van`. `verwacht_tot` is wat de kine verwacht; de pauze eindigt
+ * pas met zijn bevestiging (`einde`: de eerste dag waarop lopen weer mag).
+ */
+                            
+             
+                      
+                 
+                
+ 
+
                               
                                   
                           
+                           
  
 
                          
