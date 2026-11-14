@@ -6,7 +6,6 @@
 // naar de bron verwezen: de bouwstap maakt er ../datum.js van
 import { maandag, plusDagen } from "../datum.js";
 import { planNakijken as moetNakijken } from "../paginadata.js";
-import { vergelijkbaar } from "../regels.js";
 
 // --- Routes: #vandaag, #plan, #plan/<datum>/<n>, #logboek, #logboek/<id>, #voortgang -------------------------
 
@@ -218,14 +217,16 @@ function soortVan(t) {
 }
 const kleur = (e, s) => { e.style.setProperty("--kleur", `var(--${s.kleur})`); return e; };
 
-/**
- * Blokjesgrafiek: per stap een blok; breedte = duur, hoogte = midden van het bereik t.o.v. LTHR of FTP. Of een stap
- * hard is en hoe hoog hij is, staat al in D (`stap.intensiteit`, berekend in regels.ts).
- */
+/** Blokjesgrafiek: per stap een blok; breedte = duur, hoogte = midden van het bereik t.o.v. LTHR of FTP. */
 function blokjes(t, groot) {
   const Z = staat.D.zones;
+  const intensiteit = (st) => {
+    if (st.hartslag) { const m = (st.hartslag[0] + st.hartslag[1]) / 2; return { pct: m / Z.lthr, hard: m > Z.loop_z2_max }; }
+    if (st.wattage && Z.ftp) { const m = (st.wattage[0] + st.wattage[1]) / 2; return { pct: m / Z.ftp, hard: m > Z.fiets_z2_pct / 100 * Z.ftp }; }
+    return null;
+  };
   const hoogte = (pct) => Math.max(14, Math.min(100, (pct - 0.4) * 170));
-  const stappen = (t.stappen || []).filter((st) => st.duur_min && st.intensiteit);
+  const stappen = (t.stappen || []).filter((st) => st.duur_min && intensiteit(st));
   if (!stappen.length) return null;
   const g = kleur(el("div", "blokjes" + (groot ? " groot" : "")), soortVan(t));
   g.setAttribute("role", "img");
@@ -233,7 +234,7 @@ function blokjes(t, groot) {
   const lijn = el("span", "z2"); lijn.title = "Grens van zone 2";
   lijn.style.bottom = hoogte(stappen[0].hartslag ? Z.loop_z2_max / Z.lthr : Z.fiets_z2_pct / 100) + "%"; g.append(lijn);
   for (const st of stappen) {
-    const it = st.intensiteit, b = el("i", it.hard ? "hard" : null);
+    const it = intensiteit(st), b = el("i", it.hard ? "hard" : null);
     b.style.flex = st.duur_min; b.style.height = hoogte(it.pct) + "%"; b.title = st.naam;
     g.append(b);
   }
@@ -870,12 +871,12 @@ function wedstrijdSectie(D) {
 function volumeSectie(D) {
   const twee = el("div", "twee");
   const c = D.weekstatus.cijfers, lv = c.loopvolume;
-  const over = lv.te_veel > 0;
+  const over = lv.toegelaten != null && lv.gelopen > lv.toegelaten;
   const loop = el("div"), fiets = el("div");
   const vol = el("div", "grafiek"), fg = el("div", "grafiek");
   loop.append(el("p", "label", "Loopvolume deze week"),
     grootCijfer(String(lv.gelopen), lv.toegelaten != null ? ` / ${lv.toegelaten} min` : " min",
-      lv.toegelaten == null ? null : over ? pil(`${lv.te_veel} min te veel`, "warn", "driehoek") : pil("binnen de grens", "ok", "vink")),
+      lv.toegelaten == null ? null : over ? pil(`${lv.gelopen - lv.toegelaten} min te veel`, "warn", "driehoek") : pil("binnen de grens", "ok", "vink")),
     vol, legende([["t-rustig", "gelopen"], ["warn", "boven het toegelaten"], ["ink", "toegelaten", true], ["muted", "richtvolume", true]]),
     hoeLees("Elke staaf is een week. Het stuk boven het toegelaten volume is oranje: dat is geen vooruitgang, want te snel meer lopen is precies hoe je pees overbelast raakte.",
       "De lijn is het toegelaten loopvolume (de pijnregel en de opbouw), de stippellijn het richtvolume van de fase."));
@@ -1014,10 +1015,8 @@ function pijnSectie(D) {
   const uit = [grootCijfer(laatsteOchtend ? String(laatsteOchtend.score) : "—", " ochtend",
     el("span", "klein", laatsteOchtend ? (laatsteOchtend.datum === D.momentopname ? "vandaag" : lang(laatsteOchtend.datum)) : ""),
     laatsteKnie ? el("span", "klein", `· knie ${laatsteKnie.score} (${lang(laatsteKnie.datum)})`) : null),
-    g, legende([["t-rustig", "ochtendpijn", true], ["ok", `knie tot ${D.pijn.grens}`], ["bad", "pijnregel niet in orde"], ["z1", "loopje zonder kniescore"]]),
-    hoeLees("Bovenaan staat je ochtendpijn per dag, de voorbije weken. Een gat in de lijn is een dag zonder ochtendpijn: dan valt de vergelijking van de pijnregel weg.",
-      "Een rood punt: de ochtendpijn lag hoger dan de ochtend ervoor, de dag na een training. Dat is de eerste manier waarop de pijnregel niet in orde is.",
-      `De strook "knie" toont per dag de hoogste kniepijn na een training: groen tot en met ${D.pijn.grens}, rood erboven. Dat is de tweede manier. Een grijs vakje met een vraagteken is een loopje zonder kniescore: dan is de week onvolledig. Tik op een dag voor de cijfers en de trainingen.`,
+    g, legende([["z4", "ochtendpijn"], ["t-rustig", "kniepijn na training"], ["bad", "grens", true]]),
+    hoeLees("Elke dag van de voorbije weken. Een gat in de lijn is een dag zonder ochtendpijn: dan valt de vergelijking van de pijnregel weg.",
       D.pijn.kniepijn_uitleg)];
   // invoer voor een datum: ochtendpijn achteraf ingeven of wijzigen
   const invoer = el("div", "checkin");
@@ -1038,59 +1037,23 @@ function pijnSectie(D) {
     const eerste = D.belasting[0]?.datum ?? plusDagen(D.momentopname, -41);
     const dagen = []; for (let d = eerste; d <= D.momentopname; d = plusDagen(d, 1)) dagen.push(d);
     const ochtend = new Map(D.pijn.ochtendpijn.map((p) => [p.datum, p.score]));
-    const grens = D.pijn.grens;
-    // per dag de trainingen uit het logboek: met kniescore, en loopjes zonder (pas vanaf de eerste kniescore ooit)
-    const eersteKnie = D.logboek.reduce((min, a) => a.kniepijn != null && (!min || a.datum < min) ? a.datum : min, null);
-    const trainingen = new Map();
-    for (const a of D.logboek) { if (!trainingen.has(a.datum)) trainingen.set(a.datum, []); trainingen.get(a.datum).push(a); }
-    const knieVan = (d) => (trainingen.get(d) || []).filter((a) => a.kniepijn != null || (a.soort === "loopje" && eersteKnie && d >= eersteKnie));
-    // de pijnregel: ochtendpijn de dag na een training hoger dan ervoor (zoals pijnregelWeek in regels.ts)
-    const gestegen = (d) => {
-      const gisteren = plusDagen(d, -1);
-      return trainingen.has(gisteren) && ochtend.has(d) && ochtend.has(gisteren) && ochtend.get(d) > ochtend.get(gisteren)
-        && vergelijkbaar(gisteren, d, D.pijn.ochtendtest_start ?? null);
-    };
-    // de as schaalt mee: tot 5, of hoger als een ochtendpijn dat vraagt
-    const hoogste = Math.max(0, ...dagen.filter((d) => ochtend.has(d)).map((d) => ochtend.get(d)));
-    const stap = hoogste + 1 > 6 ? 2 : 1, max = Math.ceil(Math.max(5, hoogste + 1) / stap) * stap;
-    const ticks = []; for (let v = 0; v <= max; v += stap) ticks.push(v);
-    grafiek(g, { dagen, min: 0, max, ticks, onder: 26, label: "Ochtendpijn per dag, met een strook voor de kniepijn na trainingen",
-      teken(svg, x, y, strook, vak) {
+    grafiek(g, { dagen, min: 0, max: 10, ticks: [0, D.pijn.grens, 10], label: "Kniepijn en ochtendpijn per dag",
+      teken(svg, x, y) {
+        svg.append(svgEl("line", { x1: x(0), x2: x(dagen.length - 1), y1: y(D.pijn.grens), y2: y(D.pijn.grens), stroke: "var(--bad)", "stroke-dasharray": "5 4", "stroke-width": 1.5 }));
         // de ochtendpijn als lijn met gaten: een ontbrekende dag breekt de lijn
         let stuk = [];
-        const sluit = () => { if (stuk.length > 1) svg.append(svgEl("path", { d: pad(stuk), fill: "none", stroke: "var(--t-rustig)", "stroke-width": 2.5, "stroke-linejoin": "round" })); stuk = []; };
+        const sluit = () => { if (stuk.length > 1) svg.append(svgEl("path", { d: pad(stuk), fill: "none", stroke: "var(--z4)", "stroke-width": 2 })); stuk = []; };
         dagen.forEach((d, i) => { if (ochtend.has(d)) stuk.push([x(i), y(ochtend.get(d))]); else sluit(); });
         sluit();
-        dagen.forEach((d, i) => {
-          if (!ochtend.has(d)) return;
-          const rood = gestegen(d);
-          svg.append(svgEl("circle", { cx: x(i), cy: y(ochtend.get(d)), r: rood ? 5 : 3.5, fill: rood ? "var(--bad)" : "var(--t-rustig)", stroke: "var(--panel)", "stroke-width": 1.5 }));
-        });
-        // de strook: één vakje per dag met een kniescore of een loopje zonder
-        const top = vak.boven + 6, hv = vak.hoogte - 8, bv = Math.max(strook - 1.5, 2);
-        const t = svgEl("text", { x: 23, y: top + hv / 2 + 4, "text-anchor": "end" }); t.textContent = "knie"; svg.append(t);
-        dagen.forEach((d, i) => {
-          const k = knieVan(d); if (!k.length) return;
-          const scores = k.filter((a) => a.kniepijn != null).map((a) => a.kniepijn);
-          const hoog = scores.length ? Math.max(...scores) : null, open = scores.length < k.length;
-          const kleur = hoog != null && hoog > grens ? "var(--bad)" : open ? "var(--z1)" : "var(--ok)";
-          svg.append(svgEl("rect", { x: x(i) - bv / 2, y: top, width: bv, height: hv, rx: 2, fill: kleur }));
-          if (kleur === "var(--z1)") {
-            const q = svgEl("text", { x: x(i), y: top + hv / 2 + 3.5, "text-anchor": "middle", style: "fill: var(--ink); font-size: 10px; font-weight: 700" });
-            q.textContent = "?"; svg.append(q);
-          }
-        });
+        dagen.forEach((d, i) => { if (ochtend.has(d)) svg.append(svgEl("circle", { cx: x(i), cy: y(ochtend.get(d)), r: 2.5, fill: "var(--z4)" })); });
+        for (const p of D.pijn.kniepijn) {
+          const i = dagen.indexOf(p.datum); if (i < 0) continue;
+          svg.append(svgEl("circle", { cx: x(i), cy: y(p.score), r: 4.5, fill: p.score > D.pijn.grens ? "var(--bad)" : "var(--t-rustig)" }));
+        }
       },
       tip(d) {
-        const regels = [];
-        if (!ochtend.has(d)) regels.push("geen ochtendpijn");
-        else if (gestegen(d)) regels.push(`ochtend ${ochtend.get(d)} · hoger dan gisteren (${ochtend.get(plusDagen(d, -1))}) na een training: pijnregel niet in orde`);
-        else regels.push(`ochtend ${ochtend.get(d)}`);
-        for (const a of knieVan(d)) {
-          regels.push(a.kniepijn == null ? `knie ? (${a.naam}) · loopje zonder kniescore`
-            : `knie ${a.kniepijn} (${a.naam})${a.kniepijn > grens ? ` · boven de grens van ${grens}` : ""}`);
-        }
-        return { kop: lang(d), regels };
+        const k = D.pijn.kniepijn.filter((p) => p.datum === d).map((p) => `knie ${p.score} (${p.training})`);
+        return { kop: lang(d), regels: [ochtend.has(d) ? `ochtend ${ochtend.get(d)}` : "geen ochtendpijn", ...k] };
       } });
   });
   return uit;
@@ -1119,9 +1082,8 @@ function ftpSectie(D) {
 const pad = (punten) => punten.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
 
 function grafiek(doel, opts) {
-  // opts.onder: ruimte onder de grafiek (boven de datums) voor een strook; teken krijgt die als vijfde argument
-  const onder = opts.onder || 0, breedte = Math.max(260, doel.clientWidth), h = (opts.hoogte || hoogte()) + onder;
-  const m = { l: 28, r: 6, t: 8, b: 20 + onder };
+  const breedte = Math.max(260, doel.clientWidth), h = opts.hoogte || hoogte();
+  const m = { l: 28, r: 6, t: 8, b: 20 };
   const svg = svgEl("svg", { viewBox: `0 0 ${breedte} ${h}`, role: "img", "aria-label": opts.label });
   const dagen = opts.dagen, n = dagen.length, binnen = breedte - m.l - m.r;
   const strook = opts.band ? binnen / Math.max(n, 1) : (n < 2 ? 0 : binnen / (n - 1));
@@ -1136,7 +1098,7 @@ function grafiek(doel, opts) {
   dagen.forEach((d, i) => {
     if (i % stap === 0) { const t = svgEl("text", { x: x(i), y: h - 5, "text-anchor": i === 0 && !opts.band ? "start" : "middle" }); t.textContent = kort(d); svg.append(t); }
   });
-  opts.teken(svg, x, y, strook, { boven: h - m.b, hoogte: onder });
+  opts.teken(svg, x, y, strook);
   const markering = svgEl("g", { "pointer-events": "none" });
   svg.append(markering);
   const detail = el("div", "detail"); detail.setAttribute("aria-live", "polite");
@@ -1146,7 +1108,7 @@ function grafiek(doel, opts) {
   let vast = 0;
   dagen.forEach((d, i) => { if (d <= staat.D.momentopname) vast = i; });
   const toon = (i) => {
-    markering.replaceChildren(svgEl("line", { x1: x(i), x2: x(i), y1: m.t, y2: h - 20, stroke: "var(--ink)", "stroke-width": 1.5, opacity: 0.4 }));
+    markering.replaceChildren(svgEl("line", { x1: x(i), x2: x(i), y1: m.t, y2: h - m.b, stroke: "var(--ink)", "stroke-width": 1.5, opacity: 0.4 }));
     const inhoud = opts.tip(dagen[i]);
     detail.replaceChildren();
     if (!inhoud) { detail.append(el("b", null, kort(dagen[i]))); return; }

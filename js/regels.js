@@ -228,46 +228,8 @@ export function huidigeBelasting(wellness                        ) {
 }
 
 // --- Harde training -----------------------------------------------------------
-// Eén begrip (GLOSSARY.md), drie vragen: was een gedane activiteit hard, is een geplande training hard, en is
-// een stap van een geplande training hard. Alleen hier staan de grenzen.
 
-/** De belasting uit een voorstel; voor een MTB-rit zonder schatting ongeveer één per minuut. */
-export function geschatteBelasting(training     )         {
-  if (training.belasting != null) return training.belasting;
-  return training.soort === "mtb" ? training.duur_min : 0;
-}
-
-/** Een geplande training (uit een voorstel of weekplan) is hard door haar intensiteit, zone of geschatte belasting. */
-export function geplandHard(training     , drempels          )          {
-  return Boolean(
-    training.hard
-    || training.intensiteit
-    || training.ramptest
-    || (training.zone || 0) > 2
-    || geschatteBelasting(training) > drempels.harde_training_belasting,
-  );
-}
-
-/** De grenzen van zone 2 voor een stap: hartslag bij lopen, een percentage van de FTP bij fietsen op wattage. */
-                                                                                                          
-
-/**
- * Een stap van een geplande training: het midden van haar bereik, als deel van de LTHR of de FTP, en of het boven
- * zone 2 ligt. Null voor een stap zonder bereik (of op wattage zonder FTP).
- */
-export function stapIntensiteit(stap     , zones           )                                        {
-  if (stap.hartslag) {
-    const midden = (stap.hartslag[0] + stap.hartslag[1]) / 2;
-    return { pct: midden / zones.lthr, hard: midden > zones.loop_z2_max };
-  }
-  if (stap.wattage && zones.ftp) {
-    const midden = (stap.wattage[0] + stap.wattage[1]) / 2;
-    return { pct: midden / zones.ftp, hard: midden > zones.fiets_z2_pct / 100 * zones.ftp };
-  }
-  return null;
-}
-
-/** Een gedane activiteit is hard door haar belasting of door intensiteit boven zone 2. Geeft de reden of null. */
+/** Een harde training door zijn belasting of door intensiteit boven zone 2. Geeft de reden of null. */
 export function hardeTraining(activiteit            , drempels          )                {
   const belasting = activiteit.belasting || 0;
   if (belasting > drempels.harde_training_belasting) {
@@ -452,7 +414,7 @@ function waarschuwing(code        , titel        , wat        , advies        ) 
 /** Wat de pijnwaarschuwingen van een training nodig hebben: ook de pagina rekent ze opnieuw, met een wachtende score. */
                                                                                       
 
-export function pijnWaarschuwingen(activiteiten                  , ochtendpijn             , drempels                                ,
+export function pijnWaarschuwingen(activiteiten                  , ochtendpijn             , drempels          ,
                                    vandaag       , dagen = 7, start               = null)                 {
   const waarschuwingen                 = [];
   const vanaf = plusDagen(vandaag, -dagen);
